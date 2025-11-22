@@ -1,0 +1,115 @@
+/* src/components/pages/Home.css */
+
+.home {
+    min-height: 100vh;
+    padding-bottom: 110px;
+    background: linear-gradient(140deg, #0b0822, #131a3c 45%, #035645);
+    position: relative;
+    overflow: hidden;
+    color: #f5f7ff;
+}
+
+.home::before {
+    content: "";
+    position: absolute;
+    inset: -40% 10% auto;
+    height: 60%;
+    background: radial-gradient(circle, rgba(137, 72, 255, 0.45), transparent 65%);
+    z-index: 0;
+}
+
+.home::after {
+    content: "";
+    position: absolute;
+    inset: auto 5% -30% 20%;
+    height: 50%;
+    background: radial-gradient(circle, rgba(0, 214, 146, 0.35), transparent 70%);
+    z-index: 0;
+}
+
+.home > * {
+    position: relative;
+    z-index: 1;
+}
+
+.home__header {
+    width: min(720px, 92%);
+    margin: 20px auto 8px;
+    display: grid;
+    grid-template-columns: 52px 1fr;
+    gap: 16px;
+    align-items: center;
+}
+
+.home__brand {
+    width: 52px;
+    height: 52px;
+    border-radius: 18px;
+    background: radial-gradient(circle at top, #47f5b0, #23a66b 40%),
+        linear-gradient(135deg, #1d2448, #050c1e);
+    color: #f5f7ff;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 15px 30px rgba(0, 217, 138, 0.35);
+}
+
+.home__search {
+    height: 48px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 0 18px;
+    outline: none;
+    font-size: 15px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    backdrop-filter: blur(6px);
+    transition: border-color .2s ease, background .2s ease;
+}
+
+.home__search::placeholder {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.home__search:focus {
+    border-color: rgba(142, 228, 255, 0.65);
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.home__content {
+    padding-top: 12px;
+    padding-bottom: 10px;
+}
+
+.home__content > div {
+    width: min(740px, 94%);
+    margin: 0 auto;
+}
+
+@media (max-width: 640px) {
+    .home__header {
+        width: 94%;
+        grid-template-columns: 46px 1fr;
+    }
+
+    .home__brand {
+        width: 46px;
+        height: 46px;
+        border-radius: 16px;
+    }
+}
+
+@media (max-width: 420px) {
+    .home {
+        padding-bottom: 130px;
+    }
+
+    .home__header {
+        gap: 12px;
+        margin-top: 16px;
+    }
+
+    .home__search {
+        height: 44px;
+    }
+}

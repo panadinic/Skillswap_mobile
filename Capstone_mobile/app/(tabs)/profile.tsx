@@ -1,0 +1,1025 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  ActivityIndicator,
+  FlatList,
+  Platform,
+  KeyboardAvoidingView,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+
+import { DEFAULT_AVATAR } from '@/constants/images';
+import { useProfile } from '@/src/hooks/useProfile';
+import { Publication } from '@/src/services/api';
+import { cancelCalendarEvent } from '@/src/services/calendar';
+import { createReview, Review } from '@/src/services/reviews';
+import { getMatches, MatchSummary } from '@/src/services/interactions';
+import { updateMyProfile } from '@/src/services/users';
+import { auth, storage } from '@/src/services/firebase';
+
+const tabs = [
+  { key: 'publicaciones', label: 'Publicaciones' },
+  { key: 'fotos', label: 'Fotos' },
+  { key: 'calendario', label: 'Calendario' },
+];
+
+export default function ProfileScreen() {
+  const router = useRouter();
+  const { userId } = useLocalSearchParams<{ userId?: string }>();
+  const paramUserId = Array.isArray(userId) ? userId[0] : userId;
+  const {
+    profile,
+    loadingProfile,
+    posts,
+    loadingPosts,
+    initializing,
+    calendarEvents,
+    loadingCalendar,
+    calendarError,
+    isOwnProfile,
+    reload,
+    reviewsByPost,
+    loadReviewsForPost,
+    loadingReviews,
+    viewerUid,
+  } = useProfile(paramUserId);
+  const [activeTab, setActiveTab] = useState('publicaciones');
+  const [cancellingEvent, setCancellingEvent] = useState<string | null>(null);
+  const [showReviewFormFor, setShowReviewFormFor] = useState<Publication | null>(null);
+  const [savingReview, setSavingReview] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [matchedUids, setMatchedUids] = useState<Set<string>>(new Set());
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [expandedReviews, setExpandedReviews] = useState<Record<string, boolean>>({});
+  const [photoModal, setPhotoModal] = useState(false);
+  const [photoUrlInput, setPhotoUrlInput] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editForm, setEditForm] = useState({
+    nombre: '',
+    bio: '',
+    fotoUrl: '',
+    ciudad: '',
+    region: '',
+  });
+  const [editError, setEditError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        setLoadingMatches(true);
+        const matches = await getMatches();
+        if (!active) return;
+        const set = new Set<string>();
+        (matches || []).forEach((m: MatchSummary) => {
+          const other = m.other || m.userA || m.userB;
+          if (other?.uid) set.add(other.uid);
+          (m.users || []).forEach((u) => set.add(u));
+        });
+        setMatchedUids(set);
+      } catch (err) {
+        console.warn('[profile] no se pudieron cargar matches para reseñas', err);
+      } finally {
+        if (active) setLoadingMatches(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (profile && isOwnProfile) {
+      setEditForm({
+        nombre: profile.nombre || '',
+        bio: profile.bio || '',
+        fotoUrl: profile.fotoUrl || '',
+        ciudad: profile.ciudad || '',
+        region: profile.region || '',
+      });
+      setPhotoUrlInput(profile.fotoUrl || '');
+    }
+  }, [profile, isOwnProfile]);
+
+  const canReviewPost = useCallback(
+    (post: Publication) => {
+      const ownerUid = (post as any).creatorId || (post as any).authorUid || null;
+      if (!ownerUid) return false;
+      if (viewerUid && ownerUid === viewerUid) return false;
+      return matchedUids.has(ownerUid);
+    },
+    [matchedUids, viewerUid]
+  );
+
+  const renderPostCard = ({ item }: { item: Publication }) => {
+    const ratingAvg =
+      typeof item.ratingAvg === 'number'
+        ? item.ratingAvg.toFixed(1)
+        : item.ratingAvg || '0.0';
+    const ratingCount = item.ratingCount ?? 0;
+    const description = (item as any).content || (item as any).descripcion || '';
+    const reviews = reviewsByPost[item.id] || [];
+    const isOwnPost =
+      viewerUid && (item.creatorId === viewerUid || item.authorUid === viewerUid);
+    const canReview = canReviewPost(item);
+    const isLoadingReviews = loadingReviews === item.id;
+    const isExpanded = expandedReviews[item.id];
+
+    const toggleReviews = async () => {
+      if (isExpanded) {
+        setExpandedReviews((prev) => ({ ...prev, [item.id]: false }));
+        return;
+      }
+      if (isLoadingReviews) return;
+      try {
+        await loadReviewsForPost(item.id);
+        setExpandedReviews((prev) => ({ ...prev, [item.id]: true }));
+      } catch (err: any) {
+        Alert.alert('No se pudieron cargar las reseñas', err?.message || 'Intenta nuevamente.');
+      }
+    };
+
+    const openReviewForm = () => {
+      setReviewRating(0);
+      setReviewComment('');
+      setReviewError(null);
+      setShowReviewFormFor(item);
+    };
+
+    return (
+      <View style={styles.postCard}>
+        <View style={styles.postHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.postTitle}>{item.title || 'Sin titulo'}</Text>
+            {description ? <Text style={styles.postDescription}>{description}</Text> : null}
+          </View>
+          <View style={styles.ratingBadge}>
+            <Ionicons name="star" size={16} color="#ffd44f" />
+            <Text style={styles.ratingText}>{ratingAvg}</Text>
+            <Text style={styles.ratingCount}>({ratingCount})</Text>
+          </View>
+        </View>
+        <View style={styles.postActions}>
+          <TouchableOpacity style={styles.reviewButton} onPress={toggleReviews}>
+            <Text style={styles.reviewText}>
+              {isLoadingReviews
+                ? 'Cargando...'
+                : isExpanded
+                ? 'Ocultar reseñas'
+                : `Ver reseñas (${reviews.length})`}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuButton}>
+            <Ionicons name="ellipsis-horizontal" size={18} color="#cfd7ff" />
+          </TouchableOpacity>
+        </View>
+        {reviews.length > 0 && isExpanded && (
+          <View style={styles.reviewList}>
+            {reviews.slice(0, 3).map((rev) => (
+              <View key={rev.id} style={styles.reviewItem}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="star" size={14} color="#ffd44f" />
+                  <Text style={styles.reviewRating}>{rev.rating?.toFixed?.(1) || rev.rating}</Text>
+                  <Text style={styles.reviewAuthor}>{rev.student?.nombre || 'Usuario'}</Text>
+                </View>
+                {rev.comment ? <Text style={styles.reviewComment}>{rev.comment}</Text> : null}
+              </View>
+            ))}
+            {reviews.length > 3 ? (
+              <Text style={styles.reviewMore}>+ {reviews.length - 3} reseñas más</Text>
+            ) : null}
+          </View>
+        )}
+        {!isOwnPost && canReview && (
+          <TouchableOpacity style={styles.reviewWriteButton} onPress={openReviewForm}>
+            <Ionicons name="create-outline" size={16} color="#0b7147" />
+            <Text style={styles.reviewWriteText}>Escribir reseña</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  const formatEventDate = useCallback((value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(
+      date.getHours()
+    )}:${pad(date.getMinutes())}`;
+  }, []);
+
+  const handleCancelEvent = useCallback(
+    async (eventId: string) => {
+      if (!eventId) return;
+      try {
+        setCancellingEvent(eventId);
+        await cancelCalendarEvent(eventId);
+        reload();
+      } catch (err) {
+        console.warn('[profile] no se pudo cancelar evento', err);
+      } finally {
+        setCancellingEvent(null);
+      }
+    },
+    [reload]
+  );
+
+  const content = useMemo(() => {
+    if (activeTab === 'publicaciones') {
+      if (loadingPosts) {
+        return (
+          <View style={styles.stateBox}>
+            <ActivityIndicator color="#59f5c9" />
+            <Text style={styles.stateText}>Cargando publicaciones...</Text>
+          </View>
+        );
+      }
+      if (!posts.length) {
+        return (
+          <View style={styles.stateBox}>
+            <Text style={styles.stateText}>Este perfil aun no tiene publicaciones.</Text>
+          </View>
+        );
+      }
+      return (
+        <FlatList
+          data={posts}
+          keyExtractor={(item) => item.id}
+          renderItem={renderPostCard}
+          contentContainerStyle={{ paddingBottom: 80 }}
+        />
+      );
+    }
+    if (activeTab === 'calendario') {
+      if (!isOwnProfile) {
+        return (
+          <View style={styles.stateBox}>
+            <Text style={styles.stateText}>Solo puedes ver tu propio calendario.</Text>
+          </View>
+        );
+      }
+      if (loadingCalendar) {
+        return (
+          <View style={styles.stateBox}>
+            <ActivityIndicator color="#59f5c9" />
+            <Text style={styles.stateText}>Cargando eventos...</Text>
+          </View>
+        );
+      }
+      if (calendarError) {
+        return (
+          <View style={styles.stateBox}>
+            <Text style={[styles.stateText, { color: '#ff9d9d' }]}>{calendarError}</Text>
+          </View>
+        );
+      }
+      if (!calendarEvents.length) {
+        return (
+          <View style={styles.stateBox}>
+            <Text style={styles.stateText}>Aun no tienes reuniones agendadas.</Text>
+          </View>
+        );
+      }
+      return (
+        <View style={styles.eventsList}>
+          {calendarEvents.map((event) => (
+            <View key={event.id} style={styles.eventCard}>
+              <View style={styles.eventBubble}>
+                <Text style={styles.eventDate}>
+                  {formatEventDate(event.eventAt) || 'Sin fecha'}
+                </Text>
+                <Text style={styles.eventPartner}>
+                  Con: {event.partner?.nombre || 'usuario'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.cancelButton,
+                  cancellingEvent === event.id && { opacity: 0.5 },
+                ]}
+                disabled={cancellingEvent === event.id}
+                onPress={() => handleCancelEvent(event.id)}
+              >
+                <Text style={styles.cancelText}>
+                  {cancellingEvent === event.id ? 'Cancelando…' : 'Cancelar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      );
+    }
+    return (
+      <View style={styles.stateBox}>
+        <Text style={styles.stateText}>Seccion en construccion.</Text>
+      </View>
+    );
+  }, [
+    activeTab,
+    calendarError,
+    calendarEvents,
+    cancellingEvent,
+    formatEventDate,
+    handleCancelEvent,
+    isOwnProfile,
+    loadingCalendar,
+    loadingPosts,
+    posts,
+  ]);
+
+  if (initializing || loadingProfile || !profile) {
+    return (
+      <View style={styles.loadingScreen}>
+        <ActivityIndicator size="large" color="#59f5c9" />
+        <Text style={styles.stateText}>Cargando perfil...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 32 }}>
+      <View style={styles.profileCard}>
+        <View style={styles.profileHeader}>
+          <TouchableOpacity
+            activeOpacity={isOwnProfile ? 0.8 : 1}
+            onPress={() => {
+              if (isOwnProfile) setPhotoModal(true);
+            }}
+          >
+            <Image source={{ uri: profile.fotoUrl || DEFAULT_AVATAR }} style={styles.avatar} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{profile.nombre || 'Sin nombre'}</Text>
+            {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
+            {profile.ciudad || profile.region ? (
+              <Text style={styles.location}>
+                {[profile.ciudad, profile.region].filter(Boolean).join(', ')}
+              </Text>
+            ) : null}
+          </View>
+          {isOwnProfile && (
+            <TouchableOpacity style={styles.editButton} onPress={() => setEditOpen(true)}>
+              <Ionicons name="create-outline" size={18} color="#0b7147" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.tabsRow}>
+          {tabs
+            .filter((tab) => (tab.key === 'calendario' ? isOwnProfile : true))
+            .map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tabPill, activeTab === tab.key && styles.tabPillActive]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+            ))}
+        </View>
+      </View>
+
+      <View style={styles.contentCard}>{content}</View>
+
+      <Modal
+        visible={!!showReviewFormFor}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowReviewFormFor(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Escribir reseña</Text>
+            <Text style={styles.modalSubtitle}>
+              {showReviewFormFor?.title || 'Publicación'}
+            </Text>
+            <Text style={styles.modalLabel}>Calificación (1 a 5)</Text>
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  onPress={() => setReviewRating(n)}
+                  style={styles.starButton}
+                >
+                  <Ionicons
+                    name={n <= reviewRating ? 'star' : 'star-outline'}
+                    size={24}
+                    color="#ffd44f"
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+            <Text style={styles.modalLabel}>Comentario (opcional)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Comparte tu experiencia"
+              placeholderTextColor="#6b7280"
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              multiline
+              textAlignVertical="top"
+            />
+            {reviewError ? <Text style={styles.modalError}>{reviewError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setShowReviewFormFor(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirm, savingReview && { opacity: 0.6 }]}
+                disabled={savingReview}
+                onPress={async () => {
+                  if (!showReviewFormFor?.id) return;
+                  if (!canReviewPost(showReviewFormFor)) {
+                    setReviewError('Solo puedes reseñar a usuarios con los que hiciste match.');
+                    return;
+                  }
+                  if (!reviewRating) {
+                    setReviewError('Selecciona una calificación');
+                    return;
+                  }
+                  const existing = reviewsByPost[showReviewFormFor.id] || [];
+                  if (existing.some((r) => r.studentUid === viewerUid)) {
+                    setReviewError('Ya enviaste una reseña para esta publicación.');
+                    return;
+                  }
+                  setReviewError(null);
+                  try {
+                    setSavingReview(true);
+                    await createReview({
+                      postId: showReviewFormFor.id,
+                      rating: reviewRating,
+                      comment: reviewComment.trim() || undefined,
+                    });
+                    await loadReviewsForPost(showReviewFormFor.id);
+                    setShowReviewFormFor(null);
+                    Alert.alert('Gracias por tu reseña');
+                  } catch (err: any) {
+                    const msg = err?.message || '';
+                    if (msg.includes('403') || msg.toLowerCase().includes('no puedes')) {
+                      setReviewError('No tienes permiso para reseñar esta publicación.');
+                    } else {
+                      setReviewError(err?.message || 'No se pudo enviar la reseña.');
+                    }
+                  } finally {
+                    setSavingReview(false);
+                  }
+                }}
+              >
+                <Text style={styles.modalConfirmText}>
+                  {savingReview ? 'Enviando...' : 'Enviar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={editOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Editar perfil</Text>
+            <Text style={styles.modalLabel}>Nombre</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editForm.nombre}
+              onChangeText={(v) => setEditForm((prev) => ({ ...prev, nombre: v }))}
+              placeholder="Tu nombre"
+              placeholderTextColor="#6b7280"
+            />
+            <Text style={styles.modalLabel}>Bio</Text>
+            <TextInput
+              style={[styles.modalInput, { minHeight: 80 }]}
+              value={editForm.bio}
+              onChangeText={(v) => setEditForm((prev) => ({ ...prev, bio: v }))}
+              placeholder="Cuenta algo sobre ti"
+              placeholderTextColor="#6b7280"
+              multiline
+              textAlignVertical="top"
+            />
+            <Text style={styles.modalLabel}>Ciudad</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editForm.ciudad}
+              onChangeText={(v) => setEditForm((prev) => ({ ...prev, ciudad: v }))}
+              placeholder="Ciudad"
+              placeholderTextColor="#6b7280"
+            />
+            <Text style={styles.modalLabel}>Región</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editForm.region}
+              onChangeText={(v) => setEditForm((prev) => ({ ...prev, region: v }))}
+              placeholder="Región"
+              placeholderTextColor="#6b7280"
+            />
+            <Text style={styles.modalLabel}>Foto (URL)</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editForm.fotoUrl}
+              onChangeText={(v) => setEditForm((prev) => ({ ...prev, fotoUrl: v }))}
+              placeholder="https://..."
+              placeholderTextColor="#6b7280"
+              autoCapitalize="none"
+            />
+            {editError ? <Text style={styles.modalError}>{editError}</Text> : null}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setEditOpen(false)}
+                disabled={editSaving}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirm, editSaving && { opacity: 0.6 }]}
+                disabled={editSaving}
+                onPress={async () => {
+                  try {
+                    setEditSaving(true);
+                    setEditError(null);
+                    await updateMyProfile(editForm);
+                    await reload();
+                    setEditOpen(false);
+                  } catch (err: any) {
+                    setEditError(err?.message || 'No se pudo actualizar el perfil.');
+                  } finally {
+                    setEditSaving(false);
+                  }
+                }}
+              >
+                <Text style={styles.modalConfirmText}>
+                  {editSaving ? 'Guardando...' : 'Guardar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={photoModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Cambiar foto de perfil</Text>
+            <Text style={styles.modalLabel}>Desde la galería/archivos</Text>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalConfirm, uploadingPhoto && { opacity: 0.6 }]}
+              disabled={uploadingPhoto}
+              onPress={async () => {
+                try {
+                  setUploadingPhoto(true);
+                  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+                  if (!permission.granted) {
+                    setEditError('Necesitas permisos para acceder a tus fotos.');
+                    return;
+                  }
+                  const result = await ImagePicker.launchImageLibraryAsync({
+                    allowsEditing: true,
+                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    quality: 0.85,
+                  });
+                  if (result.canceled || !result.assets?.length) return;
+                  const uri = result.assets[0].uri;
+                  const user = auth.currentUser;
+                  if (!user) throw new Error('No hay sesión activa.');
+                  const response = await fetch(uri);
+                  const blob = await response.blob();
+                  const fileRef = ref(
+                    storage,
+                    `avatars/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+                  );
+                  await uploadBytes(fileRef, blob, {
+                    contentType: blob.type || 'image/jpeg',
+                  });
+                  const downloadUrl = await getDownloadURL(fileRef);
+                  await updateMyProfile({ fotoUrl: downloadUrl });
+                  await reload();
+                  setPhotoUrlInput(downloadUrl);
+                  setPhotoModal(false);
+                } catch (err: any) {
+                  setEditError(err?.message || 'No se pudo actualizar la foto.');
+                } finally {
+                  setUploadingPhoto(false);
+                }
+              }}
+            >
+              {uploadingPhoto ? (
+                <ActivityIndicator color="#032415" />
+              ) : (
+                <Text style={styles.modalConfirmText}>Elegir foto</Text>
+              )}
+            </TouchableOpacity>
+
+            <Text style={styles.modalLabel}>Usar URL</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={photoUrlInput}
+              onChangeText={setPhotoUrlInput}
+              placeholder="https://..."
+              placeholderTextColor="#6b7280"
+              autoCapitalize="none"
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setPhotoModal(false)}
+                disabled={uploadingPhoto}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirm, uploadingPhoto && { opacity: 0.6 }]}
+                disabled={uploadingPhoto}
+                onPress={async () => {
+                  if (!photoUrlInput.trim()) {
+                    setEditError('Ingresa una URL válida.');
+                    return;
+                  }
+                  try {
+                    setUploadingPhoto(true);
+                    setEditError(null);
+                    await updateMyProfile({ fotoUrl: photoUrlInput.trim() });
+                    await reload();
+                    setPhotoModal(false);
+                  } catch (err: any) {
+                    setEditError(err?.message || 'No se pudo actualizar la foto.');
+                  } finally {
+                    setUploadingPhoto(false);
+                  }
+                }}
+              >
+                <Text style={styles.modalConfirmText}>
+                  {uploadingPhoto ? 'Guardando...' : 'Guardar URL'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {editError ? <Text style={styles.modalError}>{editError}</Text> : null}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#040315',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  profileCard: {
+    borderRadius: 28,
+    padding: 20,
+    backgroundColor: '#0d152e',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 3,
+    borderColor: '#14f195',
+  },
+  name: {
+    color: '#ffffff',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  bio: {
+    color: '#cdd6f6',
+    marginTop: 4,
+  },
+  location: {
+    color: '#8ba3cb',
+    marginTop: 4,
+  },
+  editButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#14f195',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 20,
+  },
+  tabPill: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#1b2344',
+    alignItems: 'center',
+  },
+  tabPillActive: {
+    backgroundColor: '#14f195',
+  },
+  tabText: {
+    color: '#7a8bb2',
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#04121c',
+  },
+  contentCard: {
+    borderRadius: 24,
+    backgroundColor: '#0d162f',
+    paddingVertical: 8,
+    minHeight: 200,
+  },
+  eventsList: {
+    gap: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+  },
+  eventCard: {
+    padding: 4,
+    borderRadius: 26,
+    backgroundColor: '#050d23',
+    borderWidth: 1,
+    borderColor: '#192954',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  eventBubble: {
+    flex: 1,
+    borderRadius: 22,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#12254d',
+    borderWidth: 1,
+    borderColor: '#2a3e74',
+    shadowColor: '#020814',
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  eventDate: {
+    color: '#fdfdff',
+    fontWeight: '800',
+    fontSize: 17,
+  },
+  eventPartner: {
+    color: '#bcd3ff',
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: '#ff6b7a',
+  },
+  cancelText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  loadingScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#040315',
+    gap: 12,
+  },
+  stateBox: {
+    padding: 24,
+    alignItems: 'center',
+    gap: 8,
+  },
+  stateText: {
+    color: '#cdd6f6',
+    textAlign: 'center',
+  },
+  postCard: {
+    marginHorizontal: 16,
+    marginVertical: 8,
+    padding: 18,
+    borderRadius: 20,
+    backgroundColor: '#0d1a34',
+    borderWidth: 1,
+    borderColor: '#18254a',
+    gap: 12,
+  },
+  postHeader: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  postTitle: {
+    color: '#f7fbff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  postDescription: {
+    color: '#bbc7ec',
+    marginTop: 4,
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#112841',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 4,
+  },
+  ratingText: {
+    color: '#ffd44f',
+    fontWeight: '700',
+  },
+  ratingCount: {
+    color: '#9fb4d8',
+    fontSize: 12,
+  },
+  postActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reviewButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#14f195',
+  },
+  reviewText: {
+    color: '#03271a',
+    fontWeight: '700',
+  },
+  menuButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: '#233458',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reviewList: {
+    marginTop: 10,
+    gap: 8,
+  },
+  reviewItem: {
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#0f1f3d',
+    borderWidth: 1,
+    borderColor: '#1a2c50',
+    gap: 4,
+  },
+  reviewRating: {
+    color: '#ffd44f',
+    fontWeight: '700',
+  },
+  reviewAuthor: {
+    color: '#cdd6f6',
+  },
+  reviewComment: {
+    color: '#c0c9ea',
+    lineHeight: 18,
+  },
+  reviewMore: {
+    color: '#9fb4d8',
+    fontSize: 12,
+  },
+  reviewWriteButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#13f195',
+  },
+  reviewWriteText: {
+    color: '#032617',
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: 18,
+    backgroundColor: '#0d162f',
+    padding: 18,
+    gap: 10,
+  },
+  modalTitle: {
+    color: '#f8fbff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  modalSubtitle: {
+    color: '#9fb2df',
+  },
+  modalLabel: {
+    color: '#cdd6f6',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  starButton: {
+    padding: 6,
+  },
+  modalInput: {
+    marginTop: 6,
+    borderRadius: 12,
+    backgroundColor: '#101b3c',
+    borderWidth: 1,
+    borderColor: '#1f2f59',
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 90,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 6,
+  },
+  modalButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  modalCancel: {
+    backgroundColor: '#132241',
+  },
+  modalCancelText: {
+    color: '#d0d9fc',
+    fontWeight: '700',
+  },
+  modalConfirm: {
+    backgroundColor: '#14f195',
+  },
+  modalConfirmText: {
+    color: '#032415',
+    fontWeight: '700',
+  },
+  modalError: {
+    color: '#ff9a9a',
+  },
+  reviewConstraint: {
+    color: '#9fb4d8',
+    fontSize: 12,
+    marginTop: 6,
+  },
+});

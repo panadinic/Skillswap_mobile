@@ -1,0 +1,313 @@
+.chat-body {
+  background: radial-gradient(circle at top, rgba(34, 20, 66, 0.45), transparent 60%),
+    linear-gradient(135deg, #050712, #061a26 60%, #034335);
+}
+
+/* Contenedor general para aplicar fondo completo */
+.chat-shell {
+  min-height: 100vh;
+  background: radial-gradient(circle at top, rgba(34, 20, 66, 0.45), transparent 60%),
+    linear-gradient(135deg, #050712, #061a26 60%, #034335);
+  padding-bottom: 140px;
+}
+
+/* Header lista */
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  background: linear-gradient(120deg, #101633, #0c1a27);
+  color: #f4f7ff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
+}
+.chat-header .brand {
+  background: linear-gradient(135deg, #00d98a, #1c8f70);
+  color: #052b1f;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.3);
+}
+.chat-header .title {
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+.chat-list .chat-items {
+  display: grid;
+  background: rgba(9, 13, 30, 0.6);
+}
+.chat-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background .2s ease;
+}
+.chat-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.chat-item .avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  object-fit: cover;
+}
+.chat-item-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.chat-item-body .name {
+  font-size: 18px;
+  font-weight: 700;
+}
+.chat-item-body .preview {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.chat-list .info {
+  padding: 16px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Vista conversaciA3n */
+.chat-view {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 110px);
+  background: radial-gradient(circle at top, rgba(34, 20, 66, 0.35), transparent 55%), linear-gradient(135deg, #050712, #061a26 60%, #034335);
+  color: #f7f9ff;
+}
+.chat-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(5, 8, 23, 0.92);
+  color: #f7f9ff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.chat-topbar .back {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 22px;
+  cursor: pointer;
+}
+.chat-topbar .avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+.chat-topbar .name {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow: auto;
+  padding: 30px 22px 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  margin: 0 14px;
+  border-radius: 30px 30px 0 0;
+  box-shadow: inset 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+.bubble {
+  max-width: 75%;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.bubble.left {
+  align-self: flex-start;
+}
+.bubble.right {
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+.bubble .bubble-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.bubble .text {
+  padding: 12px 16px;
+  border-radius: 20px;
+  line-height: 1.35;
+  font-size: 14px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.bubble.left .text {
+  background: linear-gradient(135deg, #1c2040, #11152b);
+  color: #eef2ff;
+  border-bottom-left-radius: 6px;
+}
+.bubble.right .text {
+  background: linear-gradient(135deg, #2de0a7, #0c8b66);
+  color: #032117;
+  border-bottom-right-radius: 6px;
+}
+
+/* Acciones de reuniA3n */
+.schedule-meta {
+  margin-top: 6px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.schedule-meta .ok {
+  color: #00c178;
+  font-weight: 600;
+}
+.schedule-meta .no {
+  color: #ff8080;
+  font-weight: 600;
+}
+.schedule-actions {
+  display: flex;
+  gap: 8px;
+}
+.schedule-actions .btn-accept {
+  background: #00c178;
+  color: #052b1d;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.schedule-actions .btn-reject {
+  background: #ff7676;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.chat-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(7, 10, 25, 0.95);
+  position: sticky;
+  bottom: 0;
+  box-shadow: 0 -8px 25px rgba(0, 0, 0, 0.4);
+}
+.chat-input .plus,
+.chat-input .schedule {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 20px;
+  color: #f7f9ff;
+  cursor: pointer;
+}
+.chat-input input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #f7f9ff;
+  box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.35);
+}
+.chat-input input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+.chat-input .send {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2de0a7, #0c8b66);
+  color: #052b1d;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  box-shadow: 0 10px 25px rgba(0, 217, 138, 0.35);
+}
+
+/* Modal para agendar */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  width: 90%;
+  max-width: 380px;
+  background: rgba(7, 10, 21, 0.95);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  color: #f9fbff;
+}
+.modal-title {
+  font-weight: 700;
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+.modal-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  display: block;
+  margin-bottom: 6px;
+}
+.modal-datetime {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f7f9ff;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+.btn-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #fff;
+}
+.btn-confirm {
+  background: linear-gradient(120deg, #00d98a, #1a9c7c);
+  color: #052b1d;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}

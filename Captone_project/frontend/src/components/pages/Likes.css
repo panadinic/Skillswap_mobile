@@ -1,0 +1,156 @@
+.likes-page {
+    min-height: 100vh;
+    padding: 80px 16px 140px;
+    background: radial-gradient(circle at top, rgba(55, 23, 84, 0.85), transparent 60%),
+        radial-gradient(circle at bottom, rgba(0, 140, 105, 0.75), transparent 55%),
+        linear-gradient(140deg, #0b0f29, #101b3a 55%, #035645);
+    color: #f5f7ff;
+    position: relative;
+}
+
+.likes-wrapper {
+    width: min(760px, 100%);
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+}
+
+.likes-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.likes-eyebrow {
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.64);
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+
+.likes-header h1 {
+    margin: 0;
+    font-size: clamp(28px, 6vw, 36px);
+}
+
+.likes-subtitle {
+    margin: 10px auto 0;
+    max-width: 520px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.4;
+    font-size: 14px;
+}
+
+.likes-state {
+    text-align: center;
+    margin: 18px 0;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.likes-state.error {
+    color: #ff9393;
+}
+
+.likes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.likes-card {
+  background: rgba(7, 11, 25, 0.8);
+  border-radius: 20px;
+    padding: 18px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 15px 35px rgba(3, 6, 16, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.likes-card.has-unread {
+  border-color: rgba(255, 118, 170, 0.65);
+  box-shadow: 0 18px 40px rgba(255, 118, 170, 0.25);
+}
+
+.likes-card-info {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.likes-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    object-fit: cover;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
+}
+
+.likes-name {
+    margin: 0;
+    font-weight: 700;
+    font-size: 18px;
+}
+
+.likes-match {
+    margin: 4px 0 0;
+    font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.likes-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.likes-unread {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 118, 170, 0.18);
+  color: #ffb6d5;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.likes-chat-btn {
+  border: none;
+  border-radius: 14px;
+    padding: 10px 24px;
+    font-weight: 600;
+    background: linear-gradient(120deg, #00d98a, #1a9c7c);
+    color: #052b1d;
+    cursor: pointer;
+    box-shadow: 0 10px 25px rgba(0, 217, 138, 0.35);
+    transition: transform .12s ease;
+}
+
+.likes-chat-btn:hover {
+    transform: translateY(-2px);
+}
+
+.likes-chat-btn:active {
+    transform: translateY(0);
+}
+
+@media (max-width: 580px) {
+    .likes-card {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .likes-card-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .likes-chat-btn {
+        width: 100%;
+        text-align: center;
+    }
+}
