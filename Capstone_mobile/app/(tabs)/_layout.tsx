@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import Animated, { FadeIn, FadeOut, SlideInRight, SlideOutLeft } from 'react-native-reanimated';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { Colors } from '@/constants/theme';
@@ -22,7 +23,7 @@ const TabButton = (props: any) => {
   const active = accessibilityState.selected;
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={styles.tabButton}>
-      <View style={{ alignItems: 'center' }}>
+      <Animated.View entering={FadeIn.duration(200)} style={{ alignItems: 'center' }}>
         <View>
           <Ionicons
             name={icon}
@@ -31,13 +32,13 @@ const TabButton = (props: any) => {
             style={{ marginBottom: 2 }}
           />
           {badge && badge > 0 ? (
-            <View style={styles.badge}>
+            <Animated.View entering={FadeIn.duration(300)} style={styles.badge}>
               <Text style={styles.badgeText}>{badge > 9 ? '9+' : `${badge}`}</Text>
-            </View>
+            </Animated.View>
           ) : null}
         </View>
         <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
-      </View>
+      </Animated.View>
     </TouchableOpacity>
   );
 };

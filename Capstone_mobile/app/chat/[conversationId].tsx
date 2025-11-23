@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -57,8 +58,39 @@ export default function ChatScreen() {
   const [showScheduler, setShowScheduler] = useState(false);
   const [scheduleValue, setScheduleValue] = useState('');
   const [scheduleError, setScheduleError] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const listRef = useRef<FlatList<ConversationMessage>>(null);
+
+  const TypingIndicator = () => {
+    const dot1 = useSharedValue(0);
+    const dot2 = useSharedValue(0);
+    const dot3 = useSharedValue(0);
+
+    useEffect(() => {
+      dot1.value = withRepeat(withSequence(withTiming(1, { duration: 400 }), withTiming(0, { duration: 400 })), -1);
+      dot2.value = withRepeat(withSequence(withTiming(0, { duration: 200 }), withTiming(1, { duration: 400 }), withTiming(0, { duration: 400 })), -1);
+      dot3.value = withRepeat(withSequence(withTiming(0, { duration: 400 }), withTiming(1, { duration: 400 }), withTiming(0, { duration: 400 })), -1);
+    }, []);
+
+    const animatedDot1 = useAnimatedStyle(() => ({ opacity: dot1.value }));
+    const animatedDot2 = useAnimatedStyle(() => ({ opacity: dot2.value }));
+    const animatedDot3 = useAnimatedStyle(() => ({ opacity: dot3.value }));
+
+    return (
+      <View style={[styles.bubbleRow, styles.rowLeft]}>
+        <Image source={{ uri: otherUser?.fotoUrl || DEFAULT_AVATAR }} style={styles.bubbleAvatar} />
+        <View style={[styles.bubble, styles.bubbleOther, styles.typingBubble]}>
+          <View style={styles.typingDots}>
+            <Animated.View style={[styles.dot, animatedDot1]} />
+            <Animated.View style={[styles.dot, animatedDot2]} />
+            <Animated.View style={[styles.dot, animatedDot3]} />
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   const normalizeDate = (value: any): Date | null => {
     if (!value) return null;
@@ -368,7 +400,9 @@ export default function ChatScreen() {
           <Image source={{ uri: otherUser?.fotoUrl || DEFAULT_AVATAR }} style={styles.headerAvatar} />
           <View style={{ flex: 1 }}>
             <Text style={styles.headerName}>{otherUser?.nombre || 'Chat'}</Text>
-            <Text style={styles.headerSubtitle}>Coordinemos la sesion</Text>
+            <Text style={styles.headerSubtitle}>
+              {isTyping ? 'Escribiendo...' : 'Coordinemos la sesion'}
+            </Text>
           </View>
         </TouchableOpacity>
       </View>
@@ -396,6 +430,7 @@ export default function ChatScreen() {
               <Text style={styles.stateText}>Aun no hay mensajes. Escribe el primero!</Text>
             </View>
           }
+          ListFooterComponent={isTyping ? <TypingIndicator /> : null}
         />
       )}
 
@@ -408,7 +443,16 @@ export default function ChatScreen() {
           placeholder="Escribe un mensaje"
           placeholderTextColor="#7c87a8"
           value={text}
-          onChangeText={setText}
+          onChangeText={(value) => {
+            setText(value);
+            if (value.trim()) {
+              setIsTyping(true);
+              if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+              typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
+            } else {
+              setIsTyping(false);
+            }
+          }}
           editable={!sending}
           onSubmitEditing={sendMessage}
         />
@@ -689,5 +733,20 @@ const styles = StyleSheet.create({
   modalConfirmText: {
     color: '#032417',
     fontWeight: '700',
+  },
+  typingBubble: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  typingDots: {
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#7ef2c8',
   },
 });

@@ -117,6 +117,10 @@ export function PublicationCard({ publication, liked, onToggleLike, onPressProfi
         </View>
       </View>
 
+      {publication.imageUrl && (
+        <Image source={{ uri: publication.imageUrl }} style={styles.postImage} />
+      )}
+
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.description} numberOfLines={4}>
         {description}
@@ -205,6 +209,13 @@ const styles = StyleSheet.create({
     color: '#d1d5db',
     fontSize: 15,
     lineHeight: 20,
+  },
+  postImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 12,
+    backgroundColor: '#1f2937',
+    marginBottom: 8,
   },
   tagRow: {
     marginTop: 4,

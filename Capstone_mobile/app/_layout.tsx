@@ -41,14 +41,31 @@ export default function RootLayout() {
   return (
     <RegistroProvider>
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack
+        screenOptions={{
+          animation: 'slide_from_right',
+        }}
+      >
+        <Stack.Screen 
+          name="index" 
+          options={{ 
+            headerShown: false,
+            animation: 'fade',
+          }} 
+        />
+        <Stack.Screen 
+          name="(tabs)" 
+          options={{ 
+            headerShown: false,
+            animation: 'fade',
+          }} 
+        />
         <Stack.Screen
           name="create"
           options={{
             headerShown: false,
             presentation: 'modal',
+            animation: 'slide_from_bottom',
           }}
         />
         <Stack.Screen
@@ -56,6 +73,7 @@ export default function RootLayout() {
           options={{
             headerShown: false,
             presentation: 'card',
+            animation: 'slide_from_right',
           }}
         />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
@@ -107,6 +125,7 @@ export default function RootLayout() {
           headerShown: true,
           title: 'Perfil',
           presentation: 'card',
+          animation: 'slide_from_right',
         }}
       />
       </Stack>

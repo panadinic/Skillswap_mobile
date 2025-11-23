@@ -184,13 +184,6 @@ export default function HomeScreen() {
                 value={query}
                 onChangeText={setQuery}
               />
-              <TouchableOpacity
-                style={[styles.logoutButton, loggingOut && { opacity: 0.6 }]}
-                onPress={handleLogout}
-                disabled={loggingOut}
-              >
-                <Text style={styles.logoutText}>{loggingOut ? 'Saliendo...' : 'Cerrar sesion'}</Text>
-              </TouchableOpacity>
             </View>
           }
           ListEmptyComponent={

@@ -67,6 +67,42 @@ const updateMyProfile = async (req, res) => {
     // Upsert seguro: crea si no existe, actualiza si existe
     await userRef.set(updateData, { merge: true });
 
+    // Si se actualizó la foto o el nombre, actualizar todas las publicaciones del usuario
+    if (typeof fotoUrl !== 'undefined' || typeof nombre !== 'undefined') {
+      console.log(`[UPDATE PROFILE] Actualizando publicaciones para usuario ${uid}`);
+      console.log(`[UPDATE PROFILE] Nueva fotoUrl: ${fotoUrl}`);
+      console.log(`[UPDATE PROFILE] Nuevo nombre: ${nombre}`);
+      
+      const publicationsSnapshot = await db.collection('publications')
+        .where('creatorId', '==', uid)
+        .get();
+      
+      console.log(`[UPDATE PROFILE] Encontradas ${publicationsSnapshot.size} publicaciones`);
+      
+      if (publicationsSnapshot.size > 0) {
+        const batch = db.batch();
+        publicationsSnapshot.docs.forEach(doc => {
+          const updates = {};
+          if (typeof fotoUrl !== 'undefined') {
+            updates['creatorInfo.fotoUrl'] = fotoUrl;
+            updates['authorPhotoURL'] = fotoUrl;
+          }
+          if (typeof nombre !== 'undefined') {
+            updates['creatorInfo.nombre'] = nombre;
+            updates['authorName'] = nombre;
+          }
+          console.log(`[UPDATE PROFILE] Actualizando publicación ${doc.id}:`, updates);
+          batch.update(doc.ref, updates);
+        });
+        await batch.commit();
+        console.log(`[UPDATE PROFILE] ✅ Actualizadas ${publicationsSnapshot.size} publicaciones`);
+      } else {
+        console.log(`[UPDATE PROFILE] ⚠️ No se encontraron publicaciones para actualizar`);
+      }
+    } else {
+      console.log(`[UPDATE PROFILE] No se actualizó foto ni nombre, saltando actualización de publicaciones`);
+    }
+
     const snap = await userRef.get();
     return res.status(200).json({ id: snap.id, ...snap.data() });
   } catch (error) {

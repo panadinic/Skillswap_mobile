@@ -27,6 +27,7 @@ import { createReview, Review } from '@/src/services/reviews';
 import { getMatches, MatchSummary } from '@/src/services/interactions';
 import { updateMyProfile } from '@/src/services/users';
 import { auth, storage } from '@/src/services/firebase';
+import { logout } from '@/src/services/auth';
 
 const tabs = [
   { key: 'publicaciones', label: 'Publicaciones' },
@@ -77,6 +78,7 @@ export default function ProfileScreen() {
     region: '',
   });
   const [editError, setEditError] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -224,6 +226,25 @@ export default function ProfileScreen() {
       date.getHours()
     )}:${pad(date.getMinutes())}`;
   }, []);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    try {
+      setLoggingOut(true);
+      await logout();
+      router.replace('/');
+      if (Platform.OS === 'web') {
+        setTimeout(() => {
+          router.replace('/');
+          window.location.href = '/';
+        }, 20);
+      }
+    } catch (err: any) {
+      Alert.alert('No se pudo cerrar sesion', err?.message || 'Intenta nuevamente.');
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   const handleCancelEvent = useCallback(
     async (eventId: string) => {
@@ -375,9 +396,18 @@ export default function ProfileScreen() {
             ) : null}
           </View>
           {isOwnProfile && (
-            <TouchableOpacity style={styles.editButton} onPress={() => setEditOpen(true)}>
-              <Ionicons name="create-outline" size={18} color="#0b7147" />
-            </TouchableOpacity>
+            <View style={styles.profileActions}>
+              <TouchableOpacity style={styles.editButton} onPress={() => setEditOpen(true)}>
+                <Ionicons name="create-outline" size={18} color="#0b7147" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.logoutButton, loggingOut && { opacity: 0.6 }]}
+                onPress={handleLogout}
+                disabled={loggingOut}
+              >
+                <Ionicons name="log-out-outline" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
           )}
         </View>
 
@@ -737,11 +767,23 @@ const styles = StyleSheet.create({
     color: '#8ba3cb',
     marginTop: 4,
   },
+  profileActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   editButton: {
     width: 42,
     height: 42,
     borderRadius: 21,
     backgroundColor: '#14f195',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoutButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#ff6b7a',
     justifyContent: 'center',
     alignItems: 'center',
   },
