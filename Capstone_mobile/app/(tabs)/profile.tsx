@@ -21,6 +21,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 import { DEFAULT_AVATAR } from '@/constants/images';
 import { useProfile } from '@/src/hooks/useProfile';
+import { useSessionStats } from '@/src/hooks/useSessionStats';
 import { Publication } from '@/src/services/api';
 import { cancelCalendarEvent } from '@/src/services/calendar';
 import { createReview, Review } from '@/src/services/reviews';
@@ -32,6 +33,7 @@ import { logout } from '@/src/services/auth';
 const tabs = [
   { key: 'publicaciones', label: 'Publicaciones' },
   { key: 'fotos', label: 'Fotos' },
+  { key: 'estadisticas', label: 'Estadísticas' },
   { key: 'calendario', label: 'Calendario' },
 ];
 
@@ -79,6 +81,15 @@ export default function ProfileScreen() {
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
+  
+  // Obtener el userId correcto
+  const profileUserId = paramUserId || viewerUid;
+  console.log('[PROFILE] profileUserId:', profileUserId);
+  console.log('[PROFILE] profile?.uid:', profile?.uid);
+  
+  // Forzar recarga cuando cambia el userId
+  const statsKey = `stats-${profileUserId}`;
+  const { stats: sessionStats, loading: loadingStats } = useSessionStats(profileUserId);
 
   useEffect(() => {
     let active = true;
@@ -263,6 +274,50 @@ export default function ProfileScreen() {
   );
 
   const content = useMemo(() => {
+    if (activeTab === 'estadisticas') {
+      if (loadingStats) {
+        return (
+          <View style={styles.stateBox}>
+            <ActivityIndicator color="#59f5c9" />
+            <Text style={styles.stateText}>Cargando estadísticas...</Text>
+          </View>
+        );
+      }
+      if (sessionStats.totalSessions === 0) {
+        return (
+          <View style={styles.stateBox}>
+            <Text style={styles.stateText}>Aún no hay sesiones completadas.</Text>
+          </View>
+        );
+      }
+      return (
+        <View style={styles.statsContainer}>
+          <View style={styles.statsCard}>
+            <Text style={styles.statsTitle}>📊 Resumen General</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{sessionStats.totalSessions}</Text>
+                <Text style={styles.statLabel}>Sesiones</Text>
+              </View>
+              <View style={styles.statItem}>
+                <View style={styles.statRating}>
+                  <Ionicons name="star" size={16} color="#ffd44f" />
+                  <Text style={styles.statValue}>{sessionStats.averageRating.toFixed(1)}</Text>
+                </View>
+                <Text style={styles.statLabel}>Rating</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{Math.floor(sessionStats.totalMinutes / 60)}h</Text>
+                <Text style={styles.statLabel}>Totales</Text>
+              </View>
+            </View>
+            <Text style={styles.statsSubtext}>
+              Promedio: {Math.floor(sessionStats.totalMinutes / sessionStats.totalSessions)} min por sesión
+            </Text>
+          </View>
+        </View>
+      );
+    }
     if (activeTab === 'publicaciones') {
       if (loadingPosts) {
         return (
@@ -375,7 +430,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 32 }}>
+    <ScrollView key={profileUserId} style={styles.screen} contentContainerStyle={{ paddingBottom: 32 }}>
       <View style={styles.profileCard}>
         <View style={styles.profileHeader}>
           <TouchableOpacity
@@ -1063,5 +1118,77 @@ const styles = StyleSheet.create({
     color: '#9fb4d8',
     fontSize: 12,
     marginTop: 6,
+  },
+  statsContainer: {
+    padding: 16,
+    gap: 16,
+  },
+  statsCard: {
+    backgroundColor: '#0a1428',
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1a2d4f',
+  },
+  statsTitle: {
+    color: '#f8fbff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    color: '#14f195',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  statLabel: {
+    color: '#9fb4d8',
+    fontSize: 11,
+    marginTop: 4,
+  },
+  statRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  statsRoles: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  roleChip: {
+    flex: 1,
+    backgroundColor: '#12254d',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  roleText: {
+    color: '#cdd6f6',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statsTimeText: {
+    color: '#14f195',
+    fontSize: 24,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  statsSubtext: {
+    color: '#9fb4d8',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });

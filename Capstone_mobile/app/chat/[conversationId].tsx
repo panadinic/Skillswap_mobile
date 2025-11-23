@@ -4,6 +4,7 @@ import {
   FlatList,
   Modal,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -60,6 +61,18 @@ export default function ChatScreen() {
   const [scheduleError, setScheduleError] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [summaryData, setSummaryData] = useState({
+    temasVistos: '',
+    duracionMinutos: '',
+    logroClave: '',
+    tareaProxima: '',
+    dificultad: 0,
+    rating: 0,
+    comentario: ''
+  });
+  const [summaryError, setSummaryError] = useState('');
+  const [savingSummary, setSavingSummary] = useState(false);
 
   const listRef = useRef<FlatList<ConversationMessage>>(null);
 
@@ -208,6 +221,147 @@ export default function ChatScreen() {
     setShowScheduler(true);
   };
 
+  const getDecisionFor = useCallback((proposalId?: string | null) =>
+    messages.find((msg) => msg.type === 'schedule_response' && msg.refId === proposalId),
+    [messages]
+  );
+
+  const meetingStatus = useMemo(() => {
+    console.log('[BUTTON] Verificando reunión confirmada...');
+    console.log('[BUTTON] Total mensajes:', messages.length);
+    
+    // Buscar TODAS las reuniones confirmadas
+    const scheduleMsgs = messages.filter((msg) => msg.type === 'schedule');
+    console.log('[BUTTON] Mensajes de tipo schedule:', scheduleMsgs.length);
+    
+    // Encontrar la ÚLTIMA reunión confirmada (más reciente)
+    let lastConfirmed = null;
+    
+    for (const msg of scheduleMsgs) {
+      const decision = messages.find((m) => m.type === 'schedule_response' && m.refId === msg.id);
+      const resolvedStatus = msg.status || decision?.status;
+      
+      if (resolvedStatus === 'accepted') {
+        lastConfirmed = msg;
+      }
+    }
+    
+    if (!lastConfirmed) {
+      console.log('[BUTTON] ❌ No hay reuniones confirmadas');
+      return { meeting: null, summaries: [] };
+    }
+    
+    console.log('[BUTTON] Última reunión confirmada:', lastConfirmed.id);
+    
+    // Buscar TODOS los resúmenes de esta reunión
+    const summaries = messages.filter((m) => 
+      m.type === 'session_summary' && 
+      m.refId === lastConfirmed.id
+    );
+    
+    console.log('[BUTTON] Resúmenes encontrados:', summaries.length);
+    console.log('[BUTTON] Resúmenes de:', summaries.map(s => s.fromUid));
+    
+    return { meeting: lastConfirmed, summaries };
+  }, [messages]);
+  
+  const confirmedMeeting = meetingStatus.meeting;
+  const bothCompleted = meetingStatus.summaries.length >= 2;
+  const iCompleted = meetingStatus.summaries.some(s => s.fromUid === me?.uid);
+
+  const openSummaryModal = () => {
+    setSummaryError('');
+    setSummaryData({
+      temasVistos: '',
+      duracionMinutos: '',
+      logroClave: '',
+      tareaProxima: '',
+      dificultad: 0,
+      rating: 0,
+      comentario: ''
+    });
+    setShowSummaryModal(true);
+  };
+
+  const saveSummary = async () => {
+    if (!me || !convoId) return;
+    
+    if (!summaryData.temasVistos.trim() || summaryData.temasVistos.trim().length < 3) {
+      setSummaryError('Los temas vistos son obligatorios (mínimo 3 caracteres)');
+      return;
+    }
+    
+    const duracion = parseInt(summaryData.duracionMinutos);
+    if (!duracion || duracion < 1 || duracion > 300) {
+      setSummaryError('La duración debe ser entre 1 y 300 minutos');
+      return;
+    }
+    
+    if (summaryData.rating < 1 || summaryData.rating > 5) {
+      setSummaryError('Debes seleccionar una calificación (1-5 estrellas)');
+      return;
+    }
+
+    try {
+      setSavingSummary(true);
+      const meeting = confirmedMeeting;
+      
+      console.log('[SUMMARY] Guardando resumen...', {
+        convoId,
+        meetingId: meeting?.id,
+        userUid: me.uid
+      });
+      
+      const summaryPayload = {
+        conversationId: convoId,
+        meetingMessageId: meeting?.id || null,
+        meetingDate: meeting?.eventAt ? Timestamp.fromDate(meeting.eventAt) : serverTimestamp(),
+        teacher: otherUser?.uid || null,
+        student: me.uid,
+        temasVistos: summaryData.temasVistos.trim(),
+        duracionMinutos: duracion,
+        logroClave: summaryData.logroClave.trim(),
+        tareaProxima: summaryData.tareaProxima.trim(),
+        dificultad: summaryData.dificultad,
+        rating: summaryData.rating,
+        comentario: summaryData.comentario.trim(),
+        createdBy: me.uid,
+        createdAt: serverTimestamp()
+      };
+
+      console.log('[SUMMARY] Payload:', summaryPayload);
+
+      // Guardar en Firestore
+      await addDoc(collection(db, 'sessionSummaries'), summaryPayload);
+      console.log('[SUMMARY] Guardado en Firestore exitosamente');
+      
+      // Enviar mensaje al chat
+      const summaryText = `📋 Sesión completada\n⭐ ${summaryData.rating}/5\n🎯 ${summaryData.temasVistos}`;
+      await addDoc(collection(db, 'conversations', convoId, 'messages'), {
+        fromUid: me.uid,
+        text: summaryText,
+        type: 'session_summary',
+        refId: meeting?.id || null,
+        sentAt: serverTimestamp()
+      });
+      
+      await setDoc(
+        doc(db, 'conversations', convoId),
+        { lastMessageText: 'Sesión completada', lastMessageAt: serverTimestamp() },
+        { merge: true }
+      );
+
+      setShowSummaryModal(false);
+    } catch (err: any) {
+      console.error('[SUMMARY] Error completo:', err);
+      console.error('[SUMMARY] Error message:', err?.message);
+      console.error('[SUMMARY] Error code:', err?.code);
+      setSummaryError(`Error: ${err?.message || 'No se pudo guardar el resumen. Intenta nuevamente.'}`);
+    } finally {
+      setSavingSummary(false);
+    }
+  };
+
   const confirmSchedule = async () => {
     if (!me || !convoId || !scheduleValue) return;
     const iso = scheduleValue.includes('T') ? scheduleValue : scheduleValue.replace(' ', 'T');
@@ -257,9 +411,6 @@ export default function ChatScreen() {
       console.warn('[chat] notificacion no sincronizada', err);
     }
   };
-
-  const getDecisionFor = (proposalId?: string | null) =>
-    messages.find((msg) => msg.type === 'schedule_response' && msg.refId === proposalId);
 
   const updateScheduleStatus = async (
     message: ConversationMessage,
@@ -435,9 +586,21 @@ export default function ChatScreen() {
       )}
 
       <View style={styles.composer}>
-        <TouchableOpacity style={styles.agendaButton} onPress={openScheduler}>
-          <Text style={styles.agendaText}>Agenda</Text>
-        </TouchableOpacity>
+        {confirmedMeeting && !bothCompleted ? (
+          iCompleted ? (
+            <View style={styles.esperandoButton}>
+              <Text style={styles.esperandoText}>⏳ Esperando a {otherUser?.nombre || 'usuario'}</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.finalizarButton} onPress={openSummaryModal}>
+              <Text style={styles.finalizarText}>✓ Finalizar</Text>
+            </TouchableOpacity>
+          )
+        ) : (
+          <TouchableOpacity style={styles.agendaButton} onPress={openScheduler}>
+            <Text style={styles.agendaText}>Agenda</Text>
+          </TouchableOpacity>
+        )}
         <TextInput
           style={styles.input}
           placeholder="Escribe un mensaje"
@@ -469,7 +632,8 @@ export default function ChatScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Agendar reunion</Text>
-            <Text style={styles.modalLabel}>Fecha y hora (AAAA-MM-DD HH:mm)</Text>
+            
+<Text style={styles.modalLabel}>Fecha y hora (AAAA-MM-DD HH:mm)</Text>
             <TextInput
               style={styles.modalInput}
               value={scheduleValue}
@@ -490,6 +654,98 @@ export default function ChatScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showSummaryModal} animationType="fade" transparent onRequestClose={() => setShowSummaryModal(false)}>
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.summaryScrollContent}>
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>📋 Resumen de la Sesión</Text>
+              <Text style={styles.summarySubtitle}>con {otherUser?.nombre || 'Usuario'}</Text>
+              
+              <Text style={styles.summaryLabel}>Temas vistos *</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={summaryData.temasVistos}
+                onChangeText={(v) => setSummaryData({...summaryData, temasVistos: v})}
+                placeholder="Ej: Variables, loops, funciones"
+                placeholderTextColor="#6b7280"
+              />
+
+              <Text style={styles.summaryLabel}>Duración (minutos) *</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={summaryData.duracionMinutos}
+                onChangeText={(v) => setSummaryData({...summaryData, duracionMinutos: v})}
+                placeholder="90"
+                placeholderTextColor="#6b7280"
+                keyboardType="numeric"
+              />
+
+              <Text style={styles.summaryLabel}>Logro clave</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={summaryData.logroClave}
+                onChangeText={(v) => setSummaryData({...summaryData, logroClave: v})}
+                placeholder="Ej: Creé mi primer programa"
+                placeholderTextColor="#6b7280"
+              />
+
+              <Text style={styles.summaryLabel}>Tarea próxima</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={summaryData.tareaProxima}
+                onChangeText={(v) => setSummaryData({...summaryData, tareaProxima: v})}
+                placeholder="Ej: Practicar ejercicios de loops"
+                placeholderTextColor="#6b7280"
+              />
+
+              <Text style={styles.summaryLabel}>Dificultad de la sesión</Text>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity key={star} onPress={() => setSummaryData({...summaryData, dificultad: star})}>
+                    <Text style={styles.star}>{summaryData.dificultad >= star ? '⭐' : '⚪'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.summaryLabel}>Tu experiencia *</Text>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <TouchableOpacity key={star} onPress={() => setSummaryData({...summaryData, rating: star})}>
+                    <Text style={styles.star}>{summaryData.rating >= star ? '⭐' : '⚪'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.summaryLabel}>Comentario (opcional)</Text>
+              <TextInput
+                style={[styles.modalInput, styles.textArea]}
+                value={summaryData.comentario}
+                onChangeText={(v) => setSummaryData({...summaryData, comentario: v})}
+                placeholder="Escribe tu opinión..."
+                placeholderTextColor="#6b7280"
+                multiline
+                numberOfLines={3}
+              />
+
+              {summaryError ? <Text style={styles.modalError}>{summaryError}</Text> : null}
+              
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.modalCancel} onPress={() => setShowSummaryModal(false)}>
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.modalConfirm, savingSummary && {opacity: 0.5}]} 
+                  onPress={saveSummary}
+                  disabled={savingSummary}
+                >
+                  <Text style={styles.modalConfirmText}>{savingSummary ? 'Guardando...' : '💾 Guardar'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
         </View>
       </Modal>
     </SafeAreaView>
@@ -632,6 +888,27 @@ const styles = StyleSheet.create({
     color: '#7ef2c8',
     fontWeight: '700',
   },
+  finalizarButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#14f195',
+  },
+  finalizarText: {
+    color: '#032417',
+    fontWeight: '700',
+  },
+  esperandoButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#ffa726',
+  },
+  esperandoText: {
+    color: '#3e2723',
+    fontWeight: '700',
+    fontSize: 12,
+  },
   input: {
     flex: 1,
     borderRadius: 999,
@@ -748,5 +1025,48 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#7ef2c8',
+  },
+  summaryScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 16,
+  },
+  summaryCard: {
+    borderRadius: 24,
+    backgroundColor: '#0c1530',
+    padding: 20,
+    gap: 12,
+    maxWidth: 500,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  summaryTitle: {
+    color: '#f8fbff',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  summarySubtitle: {
+    color: '#9da7c9',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    color: '#9da7c9',
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  star: {
+    fontSize: 28,
+  },
+  textArea: {
+    height: 80,
+    textAlignVertical: 'top',
+    paddingTop: 10,
   },
 });
