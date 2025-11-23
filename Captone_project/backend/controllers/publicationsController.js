@@ -20,10 +20,11 @@ const tokenize = (text = '') => {
     .filter((token) => token.length > 2 && token.length < 40);
 };
 
-const buildSearchTokens = (title, content, tags = []) => {
+const buildSearchTokens = (title, content, tags = [], authorName = '') => {
   const set = new Set();
   tokenize(title).forEach((t) => set.add(t));
   tokenize(content).forEach((t) => set.add(t));
+  tokenize(authorName).forEach((t) => set.add(t));
   (Array.isArray(tags) ? tags : [])
     .flatMap((tag) => tokenize(tag))
     .forEach((t) => set.add(t));
@@ -65,13 +66,14 @@ const createPublication = async (req, res) => {
     // --- Fin de la Denormalización ---
 
     const tagList = Array.isArray(tags) ? tags : [];
+    const authorName = userData.nombre || userData.displayName || userData.email?.split('@')[0] || '';
     const searchTokens = buildSearchTokens(finalTitle, finalContent, [
       ...tagList,
       nivel,
       modalidad,
       ciudad,
       region,
-    ]);
+    ], authorName);
 
     const newPublication = {
       creatorId: uid,
@@ -180,8 +182,10 @@ const runScoredSearch = (docs, tokens) => {
 
     const title = data.title || data.titulo || '';
     const description = data.content || data.descripcion || '';
+    const authorName = data.creatorInfo?.nombre || data.authorName || '';
     const normalizedTitle = normalizeText(title);
     const normalizedDescription = normalizeText(description);
+    const normalizedAuthor = normalizeText(authorName);
     const tagTokens = new Set(
       (Array.isArray(data.tags) ? data.tags : []).flatMap((tag) => tokenize(tag))
     );
@@ -189,9 +193,10 @@ const runScoredSearch = (docs, tokens) => {
     let score = 0;
     normalizedTokens.forEach((tok) => {
       if (!tok) return;
+      if (normalizedAuthor.includes(tok)) score += 5;
       if (normalizedTitle.includes(tok)) score += 3;
-      if (normalizedDescription.includes(tok)) score += 2;
-      if (tagTokens.has(tok)) score += 2;
+      if (tagTokens.has(tok)) score += 3;
+      if (normalizedDescription.includes(tok)) score += 1;
     });
 
     const ratingCount = Number(data.ratingCount) || 0;
