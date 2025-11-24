@@ -25,6 +25,7 @@ import { auth } from '@/src/services/firebase';
 import { MatchModal } from '@/components/MatchModal';
 import { env } from '@/src/config/env';
 import { getAuthToken } from '@/src/services/auth';
+import { getMatches } from '@/src/services/interactions';
 
 type PublicationState = Publication & { liked?: boolean };
 
@@ -48,6 +49,7 @@ export default function HomeScreen() {
     otherUserName: string;
     otherUserPhoto: string | null;
   }>({ visible: false, matchId: null, otherUserName: '', otherUserPhoto: null });
+  const [unreadChats, setUnreadChats] = useState(0);
 
   // Usa icon.png por defecto; cambia a logo-s-glow.png cuando el archivo exista
   const brandLogo = useMemo(() => require('../../assets/images/icon.png'), []);
@@ -169,6 +171,24 @@ export default function HomeScreen() {
       loadLikes();
       loadPosts(false);
       loadPreferredTags();
+      (async () => {
+        try {
+          const matches = await getMatches();
+          const uid = auth.currentUser?.uid;
+          if (!uid) {
+            setUnreadChats(0);
+            return;
+          }
+          const unreadCount = (matches || []).filter((m) => {
+            const lastMessageAt = m.lastMessageAt ? Date.parse(m.lastMessageAt) : 0;
+            const lastSeen = m.lastSeenBy?.[uid] ? Date.parse(m.lastSeenBy[uid] as string) : 0;
+            return lastMessageAt && lastMessageAt > lastSeen;
+          }).length;
+          setUnreadChats(unreadCount);
+        } catch (err) {
+          // ignore
+        }
+      })();
     }, [loadLikes, loadPosts, loadPreferredTags])
   );
 
@@ -258,6 +278,11 @@ export default function HomeScreen() {
                     accessibilityLabel="Abrir chat"
                   >
                     <Ionicons name="chatbubbles" size={18} color="#14f195" />
+                    {unreadChats > 0 && (
+                      <View style={styles.chatBadge}>
+                        <Text style={styles.chatBadgeText}>{unreadChats > 9 ? '9+' : unreadChats}</Text>
+                      </View>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -396,6 +421,25 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 5,
     elevation: 3,
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#ff6b7a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#0b1220',
+  },
+  chatBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   logoutButton: {
     alignSelf: 'flex-start',

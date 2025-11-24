@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,12 +11,14 @@ import {
   TouchableOpacity,
   View,
   useWindowDimensions,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { Image } from 'expo-image';
+import * as Notifications from 'expo-notifications';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   Timestamp,
@@ -50,6 +52,8 @@ type ConversationMessage = {
 
 const ITEM_HEIGHT = 40;
 const MINUTE_STEP = 1;
+const HOUR_OFFSETS = Array.from({ length: 24 }, (_, i) => i * ITEM_HEIGHT);
+const MINUTE_OFFSETS = Array.from({ length: 60 }, (_, i) => i * ITEM_HEIGHT);
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -70,9 +74,13 @@ export default function ChatScreen() {
   const [error, setError] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const lastNotifiedId = useRef<string | null>(null);
+  const permissionsRequested = useRef(false);
   const [showScheduler, setShowScheduler] = useState(false);
   const [pickerDate, setPickerDate] = useState<Date | null>(null);
   const [pickerTime, setPickerTime] = useState('');
+  const [pickerHour, setPickerHour] = useState(0);
+  const [pickerMinute, setPickerMinute] = useState(0);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const hoursRef = useRef<ScrollView>(null);
   const minutesRef = useRef<ScrollView>(null);
@@ -134,6 +142,10 @@ export default function ChatScreen() {
     if (!convoId) return;
     setLoadingMessages(true);
     setError('');
+    if (!permissionsRequested.current) {
+      permissionsRequested.current = true;
+      Notifications.requestPermissionsAsync().catch(() => {});
+    }
     const q = query(collection(db, 'conversations', convoId, 'messages'), orderBy('sentAt', 'asc'));
     const unsub = onSnapshot(
       q,
@@ -149,6 +161,23 @@ export default function ChatScreen() {
         });
         setMessages(items);
         setLoadingMessages(false);
+
+        // Notificar mensaje nuevo del otro usuario
+        const last = items[items.length - 1];
+        if (last && last.fromUid && last.fromUid !== me?.uid && last.id !== lastNotifiedId.current) {
+          lastNotifiedId.current = last.id;
+          const body =
+            last.type === 'schedule'
+              ? 'Te enviaron una propuesta de reunión.'
+              : last.text || 'Nuevo mensaje';
+          Notifications.scheduleNotificationAsync({
+            content: {
+              title: otherUser?.nombre || 'Nuevo mensaje',
+              body,
+            },
+            trigger: null,
+          }).catch(() => {});
+        }
       },
       (err) => {
         console.error('[chat] snapshot error', err);
@@ -257,6 +286,8 @@ export default function ChatScreen() {
       const adjusted = new Date(base);
       adjusted.setMinutes(safeMinutes);
       setPickerTime(`${pad(adjusted.getHours())}:${pad(safeMinutes)}`);
+      setPickerHour(adjusted.getHours());
+      setPickerMinute(safeMinutes);
       setTimeout(() => {
         hoursRef.current?.scrollTo({ y: adjusted.getHours() * ITEM_HEIGHT, animated: false });
         minutesRef.current?.scrollTo({
@@ -273,6 +304,8 @@ export default function ChatScreen() {
     const [hStr, mStr] = pickerTime.split(':');
     const h = Number(hStr);
     const m = Number(mStr);
+    if (!Number.isNaN(h)) setPickerHour(h);
+    if (!Number.isNaN(m)) setPickerMinute(m);
     const minuteIdx = Math.round(m / MINUTE_STEP);
     requestAnimationFrame(() => {
       hoursRef.current?.scrollTo({ y: Math.max(0, h) * ITEM_HEIGHT, animated: true });
@@ -285,48 +318,98 @@ export default function ChatScreen() {
     [messages]
   );
 
-  const meetingStatus = useMemo(() => {
-    console.log('[BUTTON] Verificando reunión confirmada...');
-    console.log('[BUTTON] Total mensajes:', messages.length);
-    
-    // Buscar TODAS las reuniones confirmadas
+  const applyPickerTime = useCallback(
+    (hour: number, minute: number) => {
+      const h = Math.min(Math.max(hour, 0), 23);
+      const m = Math.min(Math.max(minute, 0), 59);
+      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const label = `${pad(h)}:${pad(m)}`;
+      setPickerHour(h);
+      setPickerMinute(m);
+      setPickerTime(label);
+      if (pickerDate) {
+        const d = new Date(pickerDate);
+        d.setHours(h);
+        d.setMinutes(m);
+        setPickerDate(d);
+      }
+    },
+    [pickerDate]
+  );
+
+    const meetingStatus = useMemo(() => {
     const scheduleMsgs = messages.filter((msg) => msg.type === 'schedule');
-    console.log('[BUTTON] Mensajes de tipo schedule:', scheduleMsgs.length);
-    
-    // Encontrar la ÚLTIMA reunión confirmada (más reciente)
-    let lastConfirmed = null;
-    
-    for (const msg of scheduleMsgs) {
-      const decision = messages.find((m) => m.type === 'schedule_response' && m.refId === msg.id);
-      const resolvedStatus = msg.status || decision?.status;
-      
+    if (!scheduleMsgs.length) return { meeting: null, summaries: [] };
+
+    // Tomar la última reunión aceptada; si ninguna aceptada, no hay reunión vigente
+    let lastAccepted: ConversationMessage | null = null;
+    for (let i = scheduleMsgs.length - 1; i >= 0; i -= 1) {
+      const sched = scheduleMsgs[i];
+      const responses = messages.filter(
+        (m) => m.type === 'schedule_response' && m.refId === sched.id
+      );
+      const lastResponse = responses.length ? responses[responses.length - 1] : null;
+      const resolvedStatus = lastResponse?.status || sched.status;
       if (resolvedStatus === 'accepted') {
-        lastConfirmed = msg;
+        lastAccepted = sched;
+        break;
+      }
+      if (resolvedStatus === 'rejected') {
+        // si la última fue rechazada, no seguimos hacia atrás
+        break;
       }
     }
-    
-    if (!lastConfirmed) {
-      console.log('[BUTTON] ❌ No hay reuniones confirmadas');
-      return { meeting: null, summaries: [] };
-    }
-    
-    console.log('[BUTTON] Última reunión confirmada:', lastConfirmed.id);
-    
-    // Buscar TODOS los resúmenes de esta reunión
-    const summaries = messages.filter((m) => 
-      m.type === 'session_summary' && 
-      m.refId === lastConfirmed.id
+
+    if (!lastAccepted) return { meeting: null, summaries: [] };
+
+    const summaries = messages.filter(
+      (m) => m.type === 'session_summary' && m.refId === lastAccepted.id
     );
-    
-    console.log('[BUTTON] Resúmenes encontrados:', summaries.length);
-    console.log('[BUTTON] Resúmenes de:', summaries.map(s => s.fromUid));
-    
-    return { meeting: lastConfirmed, summaries };
-  }, [messages]);
-  
+
+    return { meeting: lastAccepted, summaries };
+  }, [messages]);  
   const confirmedMeeting = meetingStatus.meeting;
   const bothCompleted = meetingStatus.summaries.length >= 2;
   const iCompleted = meetingStatus.summaries.some(s => s.fromUid === me?.uid);
+  const canFinalize = useMemo(() => {
+    if (!confirmedMeeting?.eventAt) return false;
+    const when = confirmedMeeting.eventAt;
+    return when.getTime() <= Date.now();
+  }, [confirmedMeeting]);
+  const [meetingStarted, setMeetingStarted] = useState(false);
+
+  useEffect(() => {
+    if (!confirmedMeeting?.eventAt) {
+      setMeetingStarted(false);
+      return;
+    }
+    const now = Date.now();
+    const target = confirmedMeeting.eventAt.getTime();
+    if (target <= now) {
+      setMeetingStarted(true);
+      Alert.alert('Tu reunión ha iniciado');
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Tu reunión ha iniciado',
+          body: 'Abre el chat para coordinar.',
+        },
+        trigger: null,
+      }).catch(() => {});
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setMeetingStarted(true);
+      Alert.alert('Tu reunión ha iniciado');
+      Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Tu reunión ha iniciado',
+          body: 'Abre el chat para coordinar.',
+        },
+        trigger: null,
+      }).catch(() => {});
+    }, target - now);
+    return () => clearTimeout(timeout);
+  }, [confirmedMeeting]);
 
   const openSummaryModal = () => {
     setSummaryError('');
@@ -465,7 +548,10 @@ export default function ChatScreen() {
         proposalMessageId: docRef.id,
       });
       setShowScheduler(false);
-      setScheduleValue('');
+      setPickerDate(null);
+      setPickerTime('');
+      setPickerHour(0);
+      setPickerMinute(0);
     } catch (err) {
       console.error('[chat] no se pudo agendar', err);
       setScheduleError(err?.message || 'No se pudo agendar.');
@@ -680,10 +766,14 @@ export default function ChatScreen() {
             <View style={styles.esperandoButton}>
               <Text style={styles.esperandoText}>Esperando a {otherUser?.nombre || 'usuario'}</Text>
             </View>
-          ) : (
+          ) : canFinalize || meetingStarted ? (
             <TouchableOpacity style={styles.finalizarButton} onPress={openSummaryModal}>
               <Text style={styles.finalizarText}>Finalizar</Text>
             </TouchableOpacity>
+          ) : (
+            <View style={[styles.agendaButton, { opacity: 0.5 }]}>
+              <Text style={[styles.agendaText, { color: '#4a6278' }]}>Agenda</Text>
+            </View>
           )
         ) : (
           <TouchableOpacity style={styles.agendaButton} onPress={openScheduler}>
@@ -697,13 +787,6 @@ export default function ChatScreen() {
           value={text}
           onChangeText={(value) => {
             setText(value);
-            if (value.trim()) {
-              setIsTyping(true);
-              if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-              typingTimeoutRef.current = setTimeout(() => setIsTyping(false), 2000);
-            } else {
-              setIsTyping(false);
-            }
           }}
           editable={!sending}
           onSubmitEditing={sendMessage}
@@ -805,78 +888,28 @@ export default function ChatScreen() {
             </View>
 
             <Text style={styles.modalLabel}>Hora</Text>
-            <View style={styles.timePickerWrapper}>
-              <View style={styles.timePickerRow}>
-                <ScrollView
-                  ref={hoursRef}
-                  showsVerticalScrollIndicator={false}
-                  snapToInterval={ITEM_HEIGHT}
-                  snapToAlignment="center"
-                  decelerationRate="fast"
-                  nestedScrollEnabled
-                  scrollEventThrottle={16}
-                  onMomentumScrollEnd={(e) => {
-                    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
-                    const hour = Math.min(Math.max(idx, 0), 23);
-                    const currentMinutes = Number(pickerTime.split(':')[1] || 0);
-                    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-                    const label = `${pad(hour)}:${pad(currentMinutes)}`;
-                    setPickerTime(label);
-                    if (pickerDate) {
-                      const d = new Date(pickerDate);
-                      d.setHours(hour);
-                      d.setMinutes(currentMinutes);
-                      setPickerDate(d);
-                    }
-                    setScheduleError('');
-                  }}
-                  contentContainerStyle={styles.wheelContent}
-                  style={styles.wheelColumn}
-                >
-                  {Array.from({ length: 24 }).map((_, h) => (
-                    <View key={h} style={styles.wheelItem}>
-                      <Text style={styles.wheelText}>{h.toString().padStart(2, '0')}</Text>
-                    </View>
-                  ))}
-                </ScrollView>
-                <View style={styles.wheelSeparator}>
-                  <Text style={styles.wheelText}>:</Text>
+            <View style={styles.timeStepperWrapper}>
+              <View style={styles.timeStepperRow}>
+                <View style={styles.timeStepper}>
+                  <TouchableOpacity onPress={() => applyPickerTime((pickerHour + 23) % 24, pickerMinute)}>
+                    <Text style={styles.stepperControl}>▲</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepperValue}>{pickerHour.toString().padStart(2, '0')}</Text>
+                  <TouchableOpacity onPress={() => applyPickerTime((pickerHour + 1) % 24, pickerMinute)}>
+                    <Text style={styles.stepperControl}>▼</Text>
+                  </TouchableOpacity>
                 </View>
-                <ScrollView
-                  ref={minutesRef}
-                  showsVerticalScrollIndicator={false}
-                  snapToInterval={ITEM_HEIGHT}
-                  snapToAlignment="center"
-                  decelerationRate="fast"
-                  nestedScrollEnabled
-                  scrollEventThrottle={16}
-                  onMomentumScrollEnd={(e) => {
-                    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
-                    const minuteIdx = Math.min(Math.max(idx, 0), 59);
-                    const minute = minuteIdx;
-                    const currentHour = Number(pickerTime.split(':')[0] || 0);
-                    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-                    const label = `${pad(currentHour)}:${pad(minute)}`;
-                    setPickerTime(label);
-                    if (pickerDate) {
-                      const d = new Date(pickerDate);
-                      d.setHours(currentHour);
-                      d.setMinutes(minute);
-                      setPickerDate(d);
-                    }
-                    setScheduleError('');
-                  }}
-                  contentContainerStyle={styles.wheelContent}
-                  style={styles.wheelColumn}
-                >
-                  {Array.from({ length: 60 }).map((_, m) => (
-                    <View key={m} style={styles.wheelItem}>
-                      <Text style={styles.wheelText}>{m.toString().padStart(2, '0')}</Text>
-                    </View>
-                  ))}
-                </ScrollView>
+                <Text style={styles.stepperSeparator}>:</Text>
+                <View style={styles.timeStepper}>
+                  <TouchableOpacity onPress={() => applyPickerTime(pickerHour, (pickerMinute + 59) % 60)}>
+                    <Text style={styles.stepperControl}>▲</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.stepperValue}>{pickerMinute.toString().padStart(2, '0')}</Text>
+                  <TouchableOpacity onPress={() => applyPickerTime(pickerHour, (pickerMinute + 1) % 60)}>
+                    <Text style={styles.stepperControl}>▼</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <View pointerEvents="none" style={styles.timePickerHighlight} />
             </View>
 
             {scheduleError ? <Text style={styles.modalError}>{scheduleError}</Text> : null}
@@ -1284,64 +1317,43 @@ const styles = StyleSheet.create({
   chipTextSelected: {
     color: '#14f195',
   },
-  timePickerWrapper: {
-    marginTop: 6,
-    paddingVertical: 4,
+  timeStepperWrapper: {
+    marginTop: 10,
+    padding: 10,
     borderRadius: 16,
     backgroundColor: '#0c1329',
     borderWidth: 1,
     borderColor: '#1f2b54',
-    position: 'relative',
-    alignSelf: 'center',
-    width: '100%',
-    maxWidth: undefined,
+    alignItems: 'center',
   },
-  timePickerRow: {
+  timeStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    height: ITEM_HEIGHT * 2,
-    overflow: 'hidden',
+    gap: 12,
   },
-  wheelContent: {
-    paddingVertical: ITEM_HEIGHT * 0.5,
+  timeStepper: {
     alignItems: 'center',
+    gap: 6,
   },
-  wheelItem: {
-    height: ITEM_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    borderRadius: 12,
-  },
-  wheelText: {
-    color: '#cdd6f6',
-    fontSize: 20,
+  stepperControl: {
+    color: '#7ef2c8',
+    fontSize: 16,
     fontWeight: '700',
+    paddingHorizontal: 6,
+  },
+  stepperValue: {
+    color: '#cdd6f6',
+    fontSize: 24,
+    fontWeight: '800',
+    minWidth: 36,
     textAlign: 'center',
   },
-  wheelSeparator: {
-    paddingHorizontal: 8,
-  },
-  timePickerHighlight: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '50%',
-    height: ITEM_HEIGHT,
-    marginTop: -ITEM_HEIGHT / 2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#14f195',
-    backgroundColor: 'rgba(20, 241, 149, 0.08)',
-    pointerEvents: 'none',
-    width: '100%',
-    alignSelf: 'center',
-  },
-  wheelColumn: {
-    flex: 1,
-    height: ITEM_HEIGHT * 2,
+  stepperSeparator: {
+    color: '#cdd6f6',
+    fontSize: 22,
+    fontWeight: '700',
+    paddingHorizontal: 6,
   },
   calendarCard: {
     marginTop: 6,
@@ -1485,3 +1497,4 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
 });
+

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { getStoredSession, getAuthToken } from '../services/auth';
 import { auth, db } from '../services/firebase';
 import { publicationsApi } from '../services/api';
@@ -151,7 +151,63 @@ export function useProfile(initialUserId?: string) {
     setLoadingCalendar(true);
     setCalendarError(null);
     try {
-      const events = await getMyCalendar();
+      const session = await getStoredSession().catch(() => null);
+      const uid = auth.currentUser?.uid || session?.user?.uid || null;
+      if (!uid) throw new Error('No se pudo identificar al usuario.');
+
+      const toIso = (value: any) => {
+        if (!value) return null;
+        if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+        if (typeof value?._seconds === 'number') return new Date(value._seconds * 1000).toISOString();
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+      };
+
+      // Trae todos los eventos (pasados y futuros) desde Firestore para tener historial
+      const loadAllEvents = async () => {
+        const snap = await getDocs(
+          query(collection(db, 'users', uid, 'calendarEvents'), orderBy('startAt', 'desc'), limit(200))
+        );
+        return snap.docs.map((doc) => {
+          const data: any = doc.data() || {};
+          const eventAt = toIso(data.startAt || data.eventAt);
+          return {
+            id: doc.id,
+            ...data,
+            eventAt: eventAt || data.eventAt || null,
+            partner: data.other || data.partner || null,
+          } as CalendarEvent;
+        });
+      };
+
+      // Combina historial completo + respaldo de la API (solo futuros) para no perder datos
+      let events: CalendarEvent[] = [];
+      try {
+        const [history, upcoming] = await Promise.all([loadAllEvents(), getMyCalendar()]);
+        const byId = new Map<string, CalendarEvent>();
+        [...history, ...(upcoming || [])].forEach((ev) => {
+          const existing = byId.get(ev.id);
+          if (existing) {
+            byId.set(ev.id, {
+              ...existing,
+              ...ev,
+              eventAt: ev.eventAt || existing.eventAt || null,
+              partner: ev.partner || existing.partner || null,
+            });
+          } else {
+            byId.set(ev.id, ev);
+          }
+        });
+        events = Array.from(byId.values());
+      } catch (err) {
+        console.warn('[profile] no se pudo leer historial completo de eventos', err);
+        try {
+          events = await getMyCalendar();
+        } catch (innerErr) {
+          console.warn('[profile] tampoco se pudo cargar eventos desde la API', innerErr);
+          events = [];
+        }
+      }
 
       // Marcar eventos finalizados si existe al menos un resumen de sesion en la misma conversacion
       const fetchCompletionStatuses = async (items: CalendarEvent[]) => {
@@ -188,6 +244,12 @@ export function useProfile(initialUserId?: string) {
       } catch (err) {
         console.warn('[profile] no se pudo marcar eventos finalizados', err);
       }
+
+      eventsWithStatus.sort((a, b) => {
+        const ta = a.eventAt ? new Date(a.eventAt).getTime() : 0;
+        const tb = b.eventAt ? new Date(b.eventAt).getTime() : 0;
+        return tb - ta;
+      });
 
       setCalendarEvents(eventsWithStatus || []);
     } catch (err: any) {

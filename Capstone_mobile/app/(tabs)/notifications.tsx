@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 
 import {
   getMyNotifications,
@@ -42,6 +43,8 @@ export default function NotificationsScreen() {
   const [actioning, setActioning] = useState<Record<string, string>>({});
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const lastNotifiedIds = useRef<Set<string>>(new Set());
+  const permissionsRequested = useRef(false);
 
   const load = useCallback(async (opts?: { append?: boolean; cursor?: number; silent?: boolean }) => {
     const { append = false, cursor = null, silent = false } = opts || {};
@@ -52,6 +55,20 @@ export default function NotificationsScreen() {
       setItems((prev) => (append ? [...prev, ...list] : list));
       setNextCursor(data?.nextCursor ?? null);
       setError(null);
+
+      // Notificar nuevas alertas que antes no estaban
+      list.forEach((n: any) => {
+        if (!n?.id) return;
+        if (!lastNotifiedIds.current.has(n.id)) {
+          lastNotifiedIds.current.add(n.id);
+          const title = n.title || 'Nueva alerta';
+          const body = n.body || n.message || 'Revisa tus notificaciones';
+          Notifications.scheduleNotificationAsync({
+            content: { title, body },
+            trigger: null,
+          }).catch(() => {});
+        }
+      });
     } catch (err: any) {
       setError(err?.message || 'No se pudieron obtener las notificaciones.');
     } finally {
@@ -61,6 +78,10 @@ export default function NotificationsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (!permissionsRequested.current) {
+        permissionsRequested.current = true;
+        Notifications.requestPermissionsAsync().catch(() => {});
+      }
       load(false);
     }, [load])
   );

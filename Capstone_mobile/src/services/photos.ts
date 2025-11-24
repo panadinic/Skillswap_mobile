@@ -19,7 +19,7 @@ export async function uploadUserPhoto(localUri: string, descripcion: string) {
   const blob = await response.blob();
   const fileRef = ref(
     storage,
-    `userPhotos/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+    `uploads/galery/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
   );
   await uploadBytes(fileRef, blob, {
     contentType: blob.type || 'image/jpeg',

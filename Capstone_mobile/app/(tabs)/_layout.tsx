@@ -93,8 +93,8 @@ export default function TabLayout() {
 
   const badgeByRoute = useMemo(
     () => ({
-      likes: unreadChats,
-      notifications: unreadNotifications,
+      likes: 0,
+      notifications: unreadNotifications + unreadChats,
     }),
     [unreadChats, unreadNotifications]
   );

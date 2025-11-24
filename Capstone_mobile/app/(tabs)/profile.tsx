@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -313,6 +313,31 @@ export default function ProfileScreen() {
     }
   }, [capturing]);
 
+  const handlePickFromGallery = useCallback(async () => {
+    if (capturing) return;
+    try {
+      setCapturing(true);
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permiso requerido', 'Autoriza el acceso a tus fotos.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        quality: 0.85,
+        mediaTypes: ImagePicker.MediaType.Images,
+      });
+      if (!result.canceled && result.assets?.length) {
+        setCapturedPhoto(result.assets[0].uri);
+        setPhotoDescription('');
+      }
+    } catch (err: any) {
+      Alert.alert('No se pudo abrir la galer�a', err?.message || 'Intenta nuevamente.');
+    } finally {
+      setCapturing(false);
+    }
+  }, [capturing]);
+
   const handleSavePhoto = useCallback(async () => {
     if (!capturedPhoto) return;
     try {
@@ -421,15 +446,26 @@ export default function ProfileScreen() {
           {isOwnProfile ? (
             <>
               <Text style={styles.stateText}>Agrega fotos para mostrar en tu perfil.</Text>
-              <TouchableOpacity
-                style={[styles.captureButton, capturing && { opacity: 0.6 }]}
-                onPress={handleOpenCamera}
-                disabled={capturing}
-              >
-                <Text style={styles.captureText}>
-                  {capturing ? 'Abriendo cámara...' : '+ Añadir foto'}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.photoCtas}>
+                <TouchableOpacity
+                  style={[styles.captureButton, capturing && { opacity: 0.6 }]}
+                  onPress={handleOpenCamera}
+                  disabled={capturing}
+                >
+                  <Text style={styles.captureText}>
+                    {capturing ? 'Abriendo camara...' : 'Tomar foto'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.captureButton, capturing && { opacity: 0.6 }]}
+                  onPress={handlePickFromGallery}
+                  disabled={capturing}
+                >
+                  <Text style={styles.captureText}>
+                    {capturing ? 'Abriendo...' : 'Subir desde galeria'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </>
           ) : (
             <Text style={styles.stateText}>Fotos del usuario.</Text>
@@ -517,15 +553,25 @@ export default function ProfileScreen() {
       if (!calendarEvents.length) {
         return (
           <View style={styles.stateBox}>
-            <Text style={styles.stateText}>Aun no tienes reuniones agendadas.</Text>
+            <Text style={styles.stateText}>
+              Aun no tienes reuniones agendadas ni historial disponible.
+            </Text>
           </View>
         );
       }
       return (
         <View style={styles.eventsList}>
           {calendarEvents.map((event) => {
+            const eventDate = event.eventAt ? new Date(event.eventAt) : null;
+            const isPast =
+              eventDate && !Number.isNaN(eventDate.getTime()) && eventDate.getTime() <= Date.now();
+            const isCancelled = (event.status || '').toLowerCase() === 'cancelled';
             const isFinished =
-              event.status === 'completed' || event.status === 'finished' || event.status === 'done';
+              !isCancelled &&
+              (isPast ||
+                event.status === 'completed' ||
+                event.status === 'finished' ||
+                event.status === 'done');
 
             return (
               <View key={event.id} style={styles.eventCard}>
@@ -537,7 +583,11 @@ export default function ProfileScreen() {
                     Con: {event.partner?.nombre || 'usuario'}
                   </Text>
                 </View>
-                {isFinished ? (
+                {isCancelled ? (
+                  <View style={styles.finishedBadge}>
+                    <Text style={styles.finishedText}>Cancelado</Text>
+                  </View>
+                ) : isFinished ? (
                   <View style={styles.finishedBadge}>
                     <Text style={styles.finishedText}>Finalizado</Text>
                   </View>
@@ -547,11 +597,11 @@ export default function ProfileScreen() {
                       styles.cancelButton,
                       cancellingEvent === event.id && { opacity: 0.5 },
                     ]}
-                    disabled={cancellingEvent === event.id}
+                    disabled={cancellingEvent === event.id || isPast}
                     onPress={() => handleCancelEvent(event.id)}
                   >
                     <Text style={styles.cancelText}>
-                      {cancellingEvent === event.id ? 'Cancelando…' : 'Cancelar'}
+                      {cancellingEvent === event.id ? 'Cancelando...' : 'Cancelar'}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -889,7 +939,7 @@ export default function ProfileScreen() {
                   const blob = await response.blob();
                   const fileRef = ref(
                     storage,
-                    `avatars/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+                    `uploads/avatars/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
                   );
                   await uploadBytes(fileRef, blob, {
                     contentType: blob.type || 'image/jpeg',
@@ -1374,6 +1424,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 14,
     backgroundColor: '#14f195',
+  },
+  photoCtas: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
   },
   captureText: {
     color: '#032617',
