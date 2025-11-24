@@ -10,7 +10,11 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -44,11 +48,21 @@ type ConversationMessage = {
   refId?: string | null;
 };
 
+const ITEM_HEIGHT = 40;
+const MINUTE_STEP = 1;
+
 export default function ChatScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { conversationId } = useLocalSearchParams<{ conversationId?: string }>();
   const convoId = Array.isArray(conversationId) ? conversationId[0] : conversationId;
   const me = auth.currentUser;
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const horizontalPadding = Math.max(12, Math.min(18, width * 0.04));
+  const bottomInset = Math.max(12, insets.bottom);
+  const isCompact = width < 360;
+  const useIconSend = width < 380;
 
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [otherUser, setOtherUser] = useState<MatchSummary['other'] | null>(null);
@@ -57,7 +71,11 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [showScheduler, setShowScheduler] = useState(false);
-  const [scheduleValue, setScheduleValue] = useState('');
+  const [pickerDate, setPickerDate] = useState<Date | null>(null);
+  const [pickerTime, setPickerTime] = useState('');
+  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const hoursRef = useRef<ScrollView>(null);
+  const minutesRef = useRef<ScrollView>(null);
   const [scheduleError, setScheduleError] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -166,6 +184,18 @@ export default function ChatScreen() {
     });
   }, [convoId]);
 
+  useFocusEffect(
+    useCallback(() => {
+      const parent: any = navigation.getParent?.();
+      if (parent?.setOptions) {
+        parent.setOptions({ tabBarStyle: { display: 'none' } });
+      }
+      return () => {
+        if (parent?.setOptions) parent.setOptions({ tabBarStyle: undefined });
+      };
+    }, [navigation])
+  );
+
   useEffect(() => {
     if (!messages.length) return;
     listRef.current?.scrollToEnd({ animated: true });
@@ -217,9 +247,38 @@ export default function ChatScreen() {
 
   const openScheduler = () => {
     setScheduleError('');
-    setScheduleValue((prev) => prev || defaultScheduleValue());
+    const iso = defaultScheduleValue();
+    const base = new Date(iso);
+    if (!Number.isNaN(base.getTime())) {
+      setPickerDate(base);
+      setCurrentMonth(new Date(base.getFullYear(), base.getMonth(), 1));
+      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const safeMinutes = Math.min(59, base.getMinutes());
+      const adjusted = new Date(base);
+      adjusted.setMinutes(safeMinutes);
+      setPickerTime(`${pad(adjusted.getHours())}:${pad(safeMinutes)}`);
+      setTimeout(() => {
+        hoursRef.current?.scrollTo({ y: adjusted.getHours() * ITEM_HEIGHT, animated: false });
+        minutesRef.current?.scrollTo({
+          y: safeMinutes * ITEM_HEIGHT,
+          animated: false,
+        });
+      }, 0);
+    }
     setShowScheduler(true);
   };
+
+  useEffect(() => {
+    if (!showScheduler || !pickerTime) return;
+    const [hStr, mStr] = pickerTime.split(':');
+    const h = Number(hStr);
+    const m = Number(mStr);
+    const minuteIdx = Math.round(m / MINUTE_STEP);
+    requestAnimationFrame(() => {
+      hoursRef.current?.scrollTo({ y: Math.max(0, h) * ITEM_HEIGHT, animated: true });
+      minutesRef.current?.scrollTo({ y: Math.max(0, minuteIdx) * ITEM_HEIGHT, animated: true });
+    });
+  }, [showScheduler, pickerTime]);
 
   const getDecisionFor = useCallback((proposalId?: string | null) =>
     messages.find((msg) => msg.type === 'schedule_response' && msg.refId === proposalId),
@@ -363,11 +422,23 @@ export default function ChatScreen() {
   };
 
   const confirmSchedule = async () => {
-    if (!me || !convoId || !scheduleValue) return;
-    const iso = scheduleValue.includes('T') ? scheduleValue : scheduleValue.replace(' ', 'T');
-    const when = new Date(iso);
-    if (Number.isNaN(when.getTime())) {
-      setScheduleError('Ingresa una fecha valida con formato AAAA-MM-DD HH:mm');
+    if (!me || !convoId) return;
+    // Reconstruir fecha/hora desde los pickers
+    let when: Date | null = null;
+    if (pickerDate && pickerTime) {
+      const [hStr, mStr] = pickerTime.split(':');
+      const h = Number(hStr);
+      const m = Number(mStr);
+      if (!Number.isNaN(h) && !Number.isNaN(m)) {
+        const composed = new Date(pickerDate);
+        composed.setHours(h);
+        composed.setMinutes(m);
+        composed.setSeconds(0, 0);
+        when = composed;
+      }
+    }
+    if (!when || Number.isNaN(when.getTime())) {
+      setScheduleError('Selecciona fecha y hora válidas.');
       return;
     }
     if (when.getTime() < Date.now()) {
@@ -535,9 +606,10 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
+      <View style={styles.container}>
+      <View style={[styles.header, { paddingHorizontal: horizontalPadding, width: '100%' }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backText}>{'< Volver'}</Text>
+          <Ionicons name="chevron-back" size={22} color="#14f195" />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.headerProfile}
@@ -571,11 +643,19 @@ export default function ChatScreen() {
         </View>
       ) : (
         <FlatList
+          style={[styles.list, { paddingBottom: bottomInset }]}
           ref={listRef}
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingHorizontal: horizontalPadding,
+              width: '100%',
+              flexGrow: 1,
+            },
+          ]}
           ListEmptyComponent={
             <View style={styles.stateBox}>
               <Text style={styles.stateText}>Aun no hay mensajes. Escribe el primero!</Text>
@@ -585,15 +665,24 @@ export default function ChatScreen() {
         />
       )}
 
-      <View style={styles.composer}>
+      <View
+        style={[
+          styles.composer,
+          {
+            paddingHorizontal: horizontalPadding,
+            paddingBottom: bottomInset,
+            width: '100%',
+          },
+        ]}
+      >
         {confirmedMeeting && !bothCompleted ? (
           iCompleted ? (
             <View style={styles.esperandoButton}>
-              <Text style={styles.esperandoText}>⏳ Esperando a {otherUser?.nombre || 'usuario'}</Text>
+              <Text style={styles.esperandoText}>Esperando a {otherUser?.nombre || 'usuario'}</Text>
             </View>
           ) : (
             <TouchableOpacity style={styles.finalizarButton} onPress={openSummaryModal}>
-              <Text style={styles.finalizarText}>✓ Finalizar</Text>
+              <Text style={styles.finalizarText}>Finalizar</Text>
             </TouchableOpacity>
           )
         ) : (
@@ -620,30 +709,176 @@ export default function ChatScreen() {
           onSubmitEditing={sendMessage}
         />
         <TouchableOpacity
-          style={[styles.sendButton, !canSend && { opacity: 0.5 }]}
+          style={[
+            styles.sendButton,
+            useIconSend && styles.sendButtonCompact,
+            !canSend && { opacity: 0.5 },
+          ]}
           onPress={sendMessage}
           disabled={!canSend}
         >
-          <Text style={styles.sendText}>Enviar</Text>
+          {useIconSend ? (
+            <Ionicons name="send" size={18} color="#052016" />
+          ) : (
+            <Text style={styles.sendText}>Enviar</Text>
+          )}
         </TouchableOpacity>
       </View>
-
+      </View>
       <Modal visible={showScheduler} animationType="fade" transparent onRequestClose={() => setShowScheduler(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Agendar reunion</Text>
-            
-<Text style={styles.modalLabel}>Fecha y hora (AAAA-MM-DD HH:mm)</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={scheduleValue}
-              onChangeText={(v) => {
-                setScheduleValue(v);
-                setScheduleError('');
-              }}
-              placeholder="2025-11-15 18:00"
-              placeholderTextColor="#6b7280"
-            />
+            <Text style={styles.modalLabel}>Fecha</Text>
+            <View style={styles.calendarCard}>
+              <View style={styles.calendarHeader}>
+                <TouchableOpacity
+                  onPress={() =>
+                    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+                  }
+                  style={styles.calendarNav}
+                >
+                  <Ionicons name="chevron-back" size={18} color="#cdd6f6" />
+                </TouchableOpacity>
+                <Text style={styles.monthText}>
+                  {currentMonth.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setCurrentMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+                  }
+                  style={styles.calendarNav}
+                >
+                  <Ionicons name="chevron-forward" size={18} color="#cdd6f6" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.weekdayRow}>
+                {['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'].map((w) => (
+                  <Text key={w} style={styles.weekdayLabel}>
+                    {w}
+                  </Text>
+                ))}
+              </View>
+              <View style={styles.daysGrid}>
+                {(() => {
+                  const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+                  const startIdx = (firstDay.getDay() + 6) % 7; // Monday=0
+                  const daysInMonth = new Date(
+                    currentMonth.getFullYear(),
+                    currentMonth.getMonth() + 1,
+                    0
+                  ).getDate();
+                  const cells = [];
+                  for (let i = 0; i < startIdx; i++) cells.push(null);
+                  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+                  return cells.map((day, idx) => {
+                    if (!day) return <View key={`empty-${idx}`} style={styles.dayCell} />;
+                    const thisDate = new Date(
+                      currentMonth.getFullYear(),
+                      currentMonth.getMonth(),
+                      day
+                    );
+                    const isSelected =
+                      pickerDate &&
+                      thisDate.toDateString() === pickerDate.toDateString();
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={[styles.dayCell, isSelected && styles.daySelected]}
+                        onPress={() => {
+                          const base = pickerDate || new Date();
+                          const next = new Date(thisDate);
+                          next.setHours(base.getHours(), base.getMinutes(), 0, 0);
+                          setPickerDate(next);
+                          setScheduleError('');
+                        }}
+                      >
+                        <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  });
+                })()}
+              </View>
+            </View>
+
+            <Text style={styles.modalLabel}>Hora</Text>
+            <View style={styles.timePickerWrapper}>
+              <View style={styles.timePickerRow}>
+                <ScrollView
+                  ref={hoursRef}
+                  showsVerticalScrollIndicator={false}
+                  snapToInterval={ITEM_HEIGHT}
+                  snapToAlignment="center"
+                  decelerationRate="fast"
+                  nestedScrollEnabled
+                  scrollEventThrottle={16}
+                  onMomentumScrollEnd={(e) => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
+                    const hour = Math.min(Math.max(idx, 0), 23);
+                    const currentMinutes = Number(pickerTime.split(':')[1] || 0);
+                    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+                    const label = `${pad(hour)}:${pad(currentMinutes)}`;
+                    setPickerTime(label);
+                    if (pickerDate) {
+                      const d = new Date(pickerDate);
+                      d.setHours(hour);
+                      d.setMinutes(currentMinutes);
+                      setPickerDate(d);
+                    }
+                    setScheduleError('');
+                  }}
+                  contentContainerStyle={styles.wheelContent}
+                  style={styles.wheelColumn}
+                >
+                  {Array.from({ length: 24 }).map((_, h) => (
+                    <View key={h} style={styles.wheelItem}>
+                      <Text style={styles.wheelText}>{h.toString().padStart(2, '0')}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+                <View style={styles.wheelSeparator}>
+                  <Text style={styles.wheelText}>:</Text>
+                </View>
+                <ScrollView
+                  ref={minutesRef}
+                  showsVerticalScrollIndicator={false}
+                  snapToInterval={ITEM_HEIGHT}
+                  snapToAlignment="center"
+                  decelerationRate="fast"
+                  nestedScrollEnabled
+                  scrollEventThrottle={16}
+                  onMomentumScrollEnd={(e) => {
+                    const idx = Math.round(e.nativeEvent.contentOffset.y / ITEM_HEIGHT);
+                    const minuteIdx = Math.min(Math.max(idx, 0), 59);
+                    const minute = minuteIdx;
+                    const currentHour = Number(pickerTime.split(':')[0] || 0);
+                    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+                    const label = `${pad(currentHour)}:${pad(minute)}`;
+                    setPickerTime(label);
+                    if (pickerDate) {
+                      const d = new Date(pickerDate);
+                      d.setHours(currentHour);
+                      d.setMinutes(minute);
+                      setPickerDate(d);
+                    }
+                    setScheduleError('');
+                  }}
+                  contentContainerStyle={styles.wheelContent}
+                  style={styles.wheelColumn}
+                >
+                  {Array.from({ length: 60 }).map((_, m) => (
+                    <View key={m} style={styles.wheelItem}>
+                      <Text style={styles.wheelText}>{m.toString().padStart(2, '0')}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+              <View pointerEvents="none" style={styles.timePickerHighlight} />
+            </View>
+
             {scheduleError ? <Text style={styles.modalError}>{scheduleError}</Text> : null}
             <View style={styles.modalActions}>
               <TouchableOpacity style={styles.modalCancel} onPress={() => setShowScheduler(false)}>
@@ -757,6 +992,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#020617',
   },
+  container: {
+    flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    backgroundColor: '#020617',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -767,6 +1008,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingVertical: 4,
     paddingHorizontal: 8,
   },
@@ -804,6 +1048,10 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingVertical: 12,
+  },
+  list: {
+    flex: 1,
+    width: '100%',
   },
   bubbleRow: {
     flexDirection: 'row',
@@ -874,6 +1122,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 12,
     gap: 8,
+    flexWrap: 'nowrap',
     borderTopWidth: 1,
     borderTopColor: '#0a132a',
     backgroundColor: '#030a1c',
@@ -883,6 +1132,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: '#152648',
+    flexShrink: 0,
   },
   agendaText: {
     color: '#7ef2c8',
@@ -916,12 +1166,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 10,
+    minHeight: 40,
   },
   sendButton: {
     borderRadius: 999,
     backgroundColor: '#14f195',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 10,
+    minWidth: 68,
+    maxWidth: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  sendButtonCompact: {
+    minWidth: 44,
+    maxWidth: 44,
+    paddingHorizontal: 10,
   },
   sendText: {
     color: '#052016',
@@ -977,6 +1238,7 @@ const styles = StyleSheet.create({
   },
   modalLabel: {
     color: '#9da7c9',
+    marginTop: 6,
   },
   modalInput: {
     borderRadius: 14,
@@ -988,6 +1250,159 @@ const styles = StyleSheet.create({
   },
   modalError: {
     color: '#ff9d9d',
+  },
+  dateRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+    paddingVertical: 4,
+  },
+  chip: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a3a63',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#0f1a35',
+  },
+  chipSmall: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#2a3a63',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#0f1a35',
+  },
+  chipSelected: {
+    borderColor: '#14f195',
+    backgroundColor: '#0b2d25',
+  },
+  chipText: {
+    color: '#cdd6f6',
+    fontWeight: '600',
+  },
+  chipTextSelected: {
+    color: '#14f195',
+  },
+  timePickerWrapper: {
+    marginTop: 6,
+    paddingVertical: 4,
+    borderRadius: 16,
+    backgroundColor: '#0c1329',
+    borderWidth: 1,
+    borderColor: '#1f2b54',
+    position: 'relative',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: undefined,
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    height: ITEM_HEIGHT * 2,
+    overflow: 'hidden',
+  },
+  wheelContent: {
+    paddingVertical: ITEM_HEIGHT * 0.5,
+    alignItems: 'center',
+  },
+  wheelItem: {
+    height: ITEM_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    borderRadius: 12,
+  },
+  wheelText: {
+    color: '#cdd6f6',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  wheelSeparator: {
+    paddingHorizontal: 8,
+  },
+  timePickerHighlight: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    height: ITEM_HEIGHT,
+    marginTop: -ITEM_HEIGHT / 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#14f195',
+    backgroundColor: 'rgba(20, 241, 149, 0.08)',
+    pointerEvents: 'none',
+    width: '100%',
+    alignSelf: 'center',
+  },
+  wheelColumn: {
+    flex: 1,
+    height: ITEM_HEIGHT * 2,
+  },
+  calendarCard: {
+    marginTop: 6,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#0f1a35',
+    borderWidth: 1,
+    borderColor: '#1f2b54',
+    width: '100%',
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  monthText: {
+    color: '#cdd6f6',
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  calendarNav: {
+    padding: 6,
+    borderRadius: 10,
+    backgroundColor: '#0c1329',
+  },
+  weekdayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  weekdayLabel: {
+    width: `${100 / 7}%`,
+    textAlign: 'center',
+    color: '#7c87a8',
+    fontWeight: '600',
+    textTransform: 'lowercase',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dayCell: {
+    width: `${100 / 7}%`,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  daySelected: {
+    backgroundColor: '#0b2d25',
+    borderWidth: 1,
+    borderColor: '#14f195',
+  },
+  dayText: {
+    color: '#cdd6f6',
+    fontWeight: '600',
+  },
+  dayTextSelected: {
+    color: '#14f195',
+    fontWeight: '800',
   },
   modalActions: {
     flexDirection: 'row',

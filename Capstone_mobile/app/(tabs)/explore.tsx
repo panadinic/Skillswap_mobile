@@ -10,8 +10,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import { DEFAULT_AVATAR } from '@/constants/images';
 import { getMatches, MatchSummary } from '@/src/services/interactions';
@@ -20,6 +21,7 @@ import { auth } from '@/src/services/firebase';
 
 export default function MatchesScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,8 +42,15 @@ export default function MatchesScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const parent: any = navigation.getParent?.();
+      if (parent?.setOptions) {
+        parent.setOptions({ tabBarStyle: { display: 'none' } });
+      }
       loadMatches();
-    }, [loadMatches])
+      return () => {
+        if (parent?.setOptions) parent.setOptions({ tabBarStyle: undefined });
+      };
+    }, [loadMatches, navigation])
   );
 
   const handleRefresh = useCallback(async () => {
@@ -149,11 +158,13 @@ export default function MatchesScreen() {
         }
       >
         <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.push('/(tabs)')}>
+              <Ionicons name="chevron-back" size={22} color="#14f195" />
+            </TouchableOpacity>
+            <Text style={styles.title}>Chats</Text>
+          </View>
           <Text style={styles.eyebrow}>Conexiones desbloqueadas</Text>
-          <Text style={styles.title}>Mis Matches</Text>
-          <Text style={styles.subtitle}>
-            Cuando se dan like mutuamente se habilita el chat para coordinar y agendar una sesion.
-          </Text>
         </View>
 
         {renderState()}
@@ -174,9 +185,13 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
   },
   header: {
-    alignItems: 'flex-start',
     marginBottom: 20,
     gap: 6,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   eyebrow: {
     color: '#9ae6ff',
@@ -191,6 +206,15 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: '#9aa3c5',
+    marginBottom: 16,
+  },
+  backButton: {
+    paddingVertical: 4,
+    paddingRight: 4,
+  },
+  backButtonText: {
+    color: '#14f195',
+    fontWeight: '700',
   },
   stateBox: {
     borderRadius: 20,

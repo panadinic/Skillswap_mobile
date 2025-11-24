@@ -93,7 +93,7 @@ export default function TabLayout() {
 
   const badgeByRoute = useMemo(
     () => ({
-      explore: unreadChats,
+      likes: unreadChats,
       notifications: unreadNotifications,
     }),
     [unreadChats, unreadNotifications]
@@ -108,47 +108,58 @@ export default function TabLayout() {
         tabBarBackground: () => <RoundedBackground children={null} />,
         tabBarButton: (props) => <HapticTab {...props} />,
       }}
-      tabBar={(props) => (
-        <RoundedBackground>
-          {props.state.routes.map((route, index) => {
-            const { options } = props.descriptors[route.key];
-            const isFocused = props.state.index === index;
-            const onPress = () => {
-              const event = props.navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!isFocused && !event.defaultPrevented) {
-                props.navigation.navigate(route.name);
+      tabBar={(props) => {
+        const activeRoute = props.state.routes[props.state.index]?.name;
+        if (activeRoute === 'explore') {
+          // Hide bottom bar on the matches screen
+          return null;
+        }
+        return (
+          <RoundedBackground>
+            {props.state.routes.map((route, index) => {
+              if (route.name === 'explore') {
+                // Do not show a tab button for the hidden matches screen
+                return null;
               }
-            };
-            const icon =
-              route.name === 'index'
-                ? 'home'
-                : route.name === 'explore'
-                ? 'heart'
-                : route.name === 'notifications'
-                ? 'notifications'
-                : route.name === 'profile'
-                ? 'person'
-                : 'ellipse';
-            return (
-              <TabButton
-                key={route.key}
-                onPress={onPress}
-                accessibilityState={{ selected: isFocused }}
-                icon={icon}
-                label={options.title ?? route.name}
-                badge={badgeByRoute[route.name as keyof typeof badgeByRoute] || 0}
-              />
-            );
-          })}
-          <TouchableOpacity style={styles.fab} onPress={() => router.push('/create')}>
-            <Ionicons name="add" size={26} color="#07a45a" />
-          </TouchableOpacity>
-        </RoundedBackground>
-      )}
+              const { options } = props.descriptors[route.key];
+              const isFocused = props.state.index === index;
+              const onPress = () => {
+                const event = props.navigation.emit({
+                  type: 'tabPress',
+                  target: route.key,
+                  canPreventDefault: true,
+                });
+                if (!isFocused && !event.defaultPrevented) {
+                  props.navigation.navigate(route.name);
+                }
+              };
+              const icon =
+                route.name === 'index'
+                  ? 'home'
+                  : route.name === 'likes'
+                  ? 'heart'
+                  : route.name === 'notifications'
+                  ? 'notifications'
+                  : route.name === 'profile'
+                  ? 'person'
+                  : 'ellipse';
+              return (
+                <TabButton
+                  key={route.key}
+                  onPress={onPress}
+                  accessibilityState={{ selected: isFocused }}
+                  icon={icon}
+                  label={options.title ?? route.name}
+                  badge={badgeByRoute[route.name as keyof typeof badgeByRoute] || 0}
+                />
+              );
+            })}
+            <TouchableOpacity style={styles.fab} onPress={() => router.push('/create')}>
+              <Ionicons name="add" size={26} color="#07a45a" />
+            </TouchableOpacity>
+          </RoundedBackground>
+        );
+      }}
     >
       <Tabs.Screen
         name="index"
@@ -157,9 +168,9 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="likes"
         options={{
-          title: 'Explore',
+          title: 'Likes',
         }}
       />
       <Tabs.Screen
@@ -172,6 +183,14 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Perfil',
+        }}
+      />
+      <Tabs.Screen
+        name="explore"
+        options={{
+          // Hidden from bottom bar, used for matches screen
+          href: null,
+          title: 'Chats',
         }}
       />
     </Tabs>

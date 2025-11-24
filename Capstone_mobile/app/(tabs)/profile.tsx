@@ -13,6 +13,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -27,6 +28,7 @@ import { cancelCalendarEvent } from '@/src/services/calendar';
 import { createReview, Review } from '@/src/services/reviews';
 import { getMatches, MatchSummary } from '@/src/services/interactions';
 import { updateMyProfile } from '@/src/services/users';
+import { listUserPhotos, uploadUserPhoto, UserPhoto } from '@/src/services/photos';
 import { auth, storage } from '@/src/services/firebase';
 import { logout } from '@/src/services/auth';
 
@@ -72,6 +74,11 @@ export default function ProfileScreen() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [photoDescription, setPhotoDescription] = useState('');
+  const [photos, setPhotos] = useState<UserPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [editForm, setEditForm] = useState({
     nombre: '',
     bio: '',
@@ -90,6 +97,9 @@ export default function ProfileScreen() {
   // Forzar recarga cuando cambia el userId
   const statsKey = `stats-${profileUserId}`;
   const { stats: sessionStats, loading: loadingStats } = useSessionStats(profileUserId);
+  const { width } = useWindowDimensions();
+  const horizontalPadding = Math.max(16, Math.min(24, width * 0.04));
+  const contentMaxWidth = Math.min(900, width - horizontalPadding * 2);
 
   useEffect(() => {
     let active = true;
@@ -128,6 +138,27 @@ export default function ProfileScreen() {
       setPhotoUrlInput(profile.fotoUrl || '');
     }
   }, [profile, isOwnProfile]);
+
+  const loadPhotos = useCallback(
+    async (uid: string) => {
+      try {
+        setLoadingPhotos(true);
+        const items = await listUserPhotos(uid);
+        setPhotos(items);
+      } catch (err) {
+        console.warn('[profile] no se pudieron cargar fotos', err);
+      } finally {
+        setLoadingPhotos(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (profileUserId) {
+      loadPhotos(profileUserId);
+    }
+  }, [profileUserId, loadPhotos]);
 
   const canReviewPost = useCallback(
     (post: Publication) => {
@@ -257,6 +288,47 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleOpenCamera = useCallback(async () => {
+    if (capturing) return;
+    try {
+      setCapturing(true);
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permiso requerido', 'Autoriza el acceso a la cámara para tomar fotos.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.length) {
+        const uri = result.assets[0].uri;
+        setCapturedPhoto(uri);
+        setPhotoDescription('');
+      }
+    } catch (err: any) {
+      Alert.alert('No se pudo abrir la cámara', err?.message || 'Intenta nuevamente.');
+    } finally {
+      setCapturing(false);
+    }
+  }, [capturing]);
+
+  const handleSavePhoto = useCallback(async () => {
+    if (!capturedPhoto) return;
+    try {
+      setCapturing(true);
+      const saved = await uploadUserPhoto(capturedPhoto, photoDescription.trim());
+      setPhotos((prev) => [saved, ...prev]);
+      Alert.alert('Foto guardada', 'Tu foto y descripción se guardaron en tu perfil.');
+      setCapturedPhoto(null);
+      setPhotoDescription('');
+    } catch (err: any) {
+      Alert.alert('No se pudo guardar la foto', err?.message || 'Intenta nuevamente.');
+    } finally {
+      setCapturing(false);
+    }
+  }, [capturedPhoto, photoDescription]);
+
   const handleCancelEvent = useCallback(
     async (eventId: string) => {
       if (!eventId) return;
@@ -343,6 +415,82 @@ export default function ProfileScreen() {
         />
       );
     }
+    if (activeTab === 'fotos') {
+      return (
+        <View style={styles.stateBox}>
+          {isOwnProfile ? (
+            <>
+              <Text style={styles.stateText}>Agrega fotos para mostrar en tu perfil.</Text>
+              <TouchableOpacity
+                style={[styles.captureButton, capturing && { opacity: 0.6 }]}
+                onPress={handleOpenCamera}
+                disabled={capturing}
+              >
+                <Text style={styles.captureText}>
+                  {capturing ? 'Abriendo cámara...' : '+ Añadir foto'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={styles.stateText}>Fotos del usuario.</Text>
+          )}
+
+          {capturedPhoto && isOwnProfile ? (
+            <View style={styles.overlayContainer} pointerEvents="box-none">
+              <View style={styles.overlayBackdrop} />
+              <View style={styles.overlayCard}>
+                <Text style={styles.modalTitle}>Nueva foto</Text>
+                <Image source={{ uri: capturedPhoto }} style={styles.photoPreview} />
+                <TextInput
+                  style={styles.photoDescInput}
+                  placeholder="Escribe una descripción"
+                  placeholderTextColor="#8aa0c6"
+                  value={photoDescription}
+                  onChangeText={setPhotoDescription}
+                  multiline
+                />
+                <View style={styles.photoActions}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalCancel, { flex: 1 }]}
+                    onPress={() => {
+                      setCapturedPhoto(null);
+                      setPhotoDescription('');
+                    }}
+                  >
+                    <Text style={styles.modalCancelText}>Descartar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalConfirm, { flex: 1 }]}
+                    onPress={handleSavePhoto}
+                    disabled={capturing}
+                  >
+                    <Text style={styles.modalConfirmText}>
+                      {capturing ? 'Guardando...' : 'Guardar'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          ) : null}
+
+          {loadingPhotos ? (
+            <View style={styles.stateBox}>
+              <ActivityIndicator color="#59f5c9" />
+              <Text style={styles.stateText}>Cargando fotos...</Text>
+            </View>
+          ) : photos.length ? (
+            <View style={styles.photoGrid}>
+              {photos.map((p) => (
+                <View key={p.id} style={styles.photoItem}>
+                  <Image source={{ uri: p.url }} style={styles.photoThumb} />
+                  {p.descripcion ? <Text style={styles.photoCaption}>{p.descripcion}</Text> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      );
+    }
     if (activeTab === 'calendario') {
       if (!isOwnProfile) {
         return (
@@ -375,30 +523,41 @@ export default function ProfileScreen() {
       }
       return (
         <View style={styles.eventsList}>
-          {calendarEvents.map((event) => (
-            <View key={event.id} style={styles.eventCard}>
-              <View style={styles.eventBubble}>
-                <Text style={styles.eventDate}>
-                  {formatEventDate(event.eventAt) || 'Sin fecha'}
-                </Text>
-                <Text style={styles.eventPartner}>
-                  Con: {event.partner?.nombre || 'usuario'}
-                </Text>
+          {calendarEvents.map((event) => {
+            const isFinished =
+              event.status === 'completed' || event.status === 'finished' || event.status === 'done';
+
+            return (
+              <View key={event.id} style={styles.eventCard}>
+                <View style={styles.eventBubble}>
+                  <Text style={styles.eventDate}>
+                    {formatEventDate(event.eventAt) || 'Sin fecha'}
+                  </Text>
+                  <Text style={styles.eventPartner}>
+                    Con: {event.partner?.nombre || 'usuario'}
+                  </Text>
+                </View>
+                {isFinished ? (
+                  <View style={styles.finishedBadge}>
+                    <Text style={styles.finishedText}>Finalizado</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.cancelButton,
+                      cancellingEvent === event.id && { opacity: 0.5 },
+                    ]}
+                    disabled={cancellingEvent === event.id}
+                    onPress={() => handleCancelEvent(event.id)}
+                  >
+                    <Text style={styles.cancelText}>
+                      {cancellingEvent === event.id ? 'Cancelando…' : 'Cancelar'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.cancelButton,
-                  cancellingEvent === event.id && { opacity: 0.5 },
-                ]}
-                disabled={cancellingEvent === event.id}
-                onPress={() => handleCancelEvent(event.id)}
-              >
-                <Text style={styles.cancelText}>
-                  {cancellingEvent === event.id ? 'Cancelando…' : 'Cancelar'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+            );
+          })}
         </View>
       );
     }
@@ -430,8 +589,24 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView key={profileUserId} style={styles.screen} contentContainerStyle={{ paddingBottom: 32 }}>
-      <View style={styles.profileCard}>
+    <ScrollView
+      key={profileUserId}
+      style={styles.screen}
+      contentContainerStyle={[
+        styles.screenContent,
+        { paddingHorizontal: horizontalPadding },
+      ]}
+    >
+      <TouchableOpacity
+        style={[styles.backRow, { width: '100%', maxWidth: contentMaxWidth }]}
+        onPress={() => router.push('/(tabs)')}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="chevron-back" size={22} color="#14f195" />
+        <Text style={styles.backText}>SkillSwapp</Text>
+      </TouchableOpacity>
+
+      <View style={[styles.profileCard, { width: '100%', maxWidth: contentMaxWidth }]}>
         <View style={styles.profileHeader}>
           <TouchableOpacity
             activeOpacity={isOwnProfile ? 0.8 : 1}
@@ -466,7 +641,12 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        <View style={styles.tabsRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.tabsScroll}
+          contentContainerStyle={styles.tabsRow}
+        >
           {tabs
             .filter((tab) => (tab.key === 'calendario' ? isOwnProfile : true))
             .map((tab) => (
@@ -480,10 +660,12 @@ export default function ProfileScreen() {
               </Text>
             </TouchableOpacity>
             ))}
-        </View>
+        </ScrollView>
       </View>
 
-      <View style={styles.contentCard}>{content}</View>
+      <View style={[styles.contentCard, { width: '100%', maxWidth: contentMaxWidth }]}>
+        {content}
+      </View>
 
       <Modal
         visible={!!showReviewFormFor}
@@ -588,82 +770,84 @@ export default function ProfileScreen() {
         onRequestClose={() => setEditOpen(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Editar perfil</Text>
-            <Text style={styles.modalLabel}>Nombre</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editForm.nombre}
-              onChangeText={(v) => setEditForm((prev) => ({ ...prev, nombre: v }))}
-              placeholder="Tu nombre"
-              placeholderTextColor="#6b7280"
-            />
-            <Text style={styles.modalLabel}>Bio</Text>
-            <TextInput
-              style={[styles.modalInput, { minHeight: 80 }]}
-              value={editForm.bio}
-              onChangeText={(v) => setEditForm((prev) => ({ ...prev, bio: v }))}
-              placeholder="Cuenta algo sobre ti"
-              placeholderTextColor="#6b7280"
-              multiline
-              textAlignVertical="top"
-            />
-            <Text style={styles.modalLabel}>Ciudad</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editForm.ciudad}
-              onChangeText={(v) => setEditForm((prev) => ({ ...prev, ciudad: v }))}
-              placeholder="Ciudad"
-              placeholderTextColor="#6b7280"
-            />
-            <Text style={styles.modalLabel}>Región</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editForm.region}
-              onChangeText={(v) => setEditForm((prev) => ({ ...prev, region: v }))}
-              placeholder="Región"
-              placeholderTextColor="#6b7280"
-            />
-            <Text style={styles.modalLabel}>Foto (URL)</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={editForm.fotoUrl}
-              onChangeText={(v) => setEditForm((prev) => ({ ...prev, fotoUrl: v }))}
-              placeholder="https://..."
-              placeholderTextColor="#6b7280"
-              autoCapitalize="none"
-            />
-            {editError ? <Text style={styles.modalError}>{editError}</Text> : null}
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancel]}
-                onPress={() => setEditOpen(false)}
-                disabled={editSaving}
-              >
-                <Text style={styles.modalCancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalConfirm, editSaving && { opacity: 0.6 }]}
-                disabled={editSaving}
-                onPress={async () => {
-                  try {
-                    setEditSaving(true);
-                    setEditError(null);
-                    await updateMyProfile(editForm);
-                    await reload();
-                    setEditOpen(false);
-                  } catch (err: any) {
-                    setEditError(err?.message || 'No se pudo actualizar el perfil.');
-                  } finally {
-                    setEditSaving(false);
-                  }
-                }}
-              >
-                <Text style={styles.modalConfirmText}>
-                  {editSaving ? 'Guardando...' : 'Guardar'}
-                </Text>
+          <View style={styles.editModalCard}>
+            <View style={styles.editHeader}>
+              <Text style={styles.modalTitle}>Editar perfil</Text>
+              <TouchableOpacity style={styles.editClose} onPress={() => setEditOpen(false)}>
+                <Ionicons name="close" size={22} color="#cdd6f6" />
               </TouchableOpacity>
             </View>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.editModalContent}
+            >
+              <Text style={styles.modalLabel}>Nombre</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editForm.nombre}
+                onChangeText={(v) => setEditForm((prev) => ({ ...prev, nombre: v }))}
+                placeholder="Tu nombre"
+                placeholderTextColor="#6b7280"
+              />
+              <Text style={styles.modalLabel}>Bio</Text>
+              <TextInput
+                style={[styles.modalInput, { minHeight: 80 }]}
+                value={editForm.bio}
+                onChangeText={(v) => setEditForm((prev) => ({ ...prev, bio: v }))}
+                placeholder="Cuenta algo sobre ti"
+                placeholderTextColor="#6b7280"
+                multiline
+                textAlignVertical="top"
+              />
+              <Text style={styles.modalLabel}>Ciudad</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editForm.ciudad}
+                onChangeText={(v) => setEditForm((prev) => ({ ...prev, ciudad: v }))}
+                placeholder="Ciudad"
+                placeholderTextColor="#6b7280"
+              />
+              <Text style={styles.modalLabel}>Regi??n</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={editForm.region}
+                onChangeText={(v) => setEditForm((prev) => ({ ...prev, region: v }))}
+                placeholder="Regi??n"
+                placeholderTextColor="#6b7280"
+              />
+              {/* campo Foto (URL) eliminado */}
+              {editError ? <Text style={styles.modalError}>{editError}</Text> : null}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalCancel]}
+                  onPress={() => setEditOpen(false)}
+                  disabled={editSaving}
+                >
+                  <Text style={styles.modalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalConfirm, editSaving && { opacity: 0.6 }]}
+                  disabled={editSaving}
+                  onPress={async () => {
+                    try {
+                      setEditSaving(true);
+                      setEditError(null);
+                      await updateMyProfile(editForm);
+                      await reload();
+                      setEditOpen(false);
+                    } catch (err: any) {
+                      setEditError(err?.message || 'No se pudo actualizar el perfil.');
+                    } finally {
+                      setEditSaving(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.modalConfirmText}>
+                    {editSaving ? 'Guardando...' : 'Guardar'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -694,7 +878,7 @@ export default function ProfileScreen() {
                   }
                   const result = await ImagePicker.launchImageLibraryAsync({
                     allowsEditing: true,
-                    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                    mediaTypes: ImagePicker.MediaType.Images,
                     quality: 0.85,
                   });
                   if (result.canceled || !result.assets?.length) return;
@@ -784,8 +968,22 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#040315',
-    paddingHorizontal: 16,
+  },
+  screenContent: {
     paddingTop: 16,
+    paddingBottom: 32,
+    alignItems: 'center',
+  },
+  backRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  backText: {
+    color: '#14f195',
+    fontSize: 18,
+    fontWeight: '800',
   },
   profileCard: {
     borderRadius: 28,
@@ -842,14 +1040,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  tabsScroll: {
+    marginTop: 20,
+  },
   tabsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 20,
+    paddingHorizontal: 4,
   },
   tabPill: {
-    flex: 1,
     paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 999,
     backgroundColor: '#1b2344',
     alignItems: 'center',
@@ -907,6 +1108,20 @@ const styles = StyleSheet.create({
     color: '#bcd3ff',
     marginTop: 8,
     fontWeight: '600',
+  },
+  finishedBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#12254d',
+    borderWidth: 1,
+    borderColor: '#2a3e74',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  finishedText: {
+    color: '#9fb4d8',
+    fontWeight: '700',
   },
   cancelButton: {
     paddingVertical: 8,
@@ -1054,6 +1269,40 @@ const styles = StyleSheet.create({
     padding: 18,
     gap: 10,
   },
+  editModalCard: {
+    width: '94%',
+    maxWidth: 720,
+    maxHeight: '86%',
+    borderRadius: 24,
+    backgroundColor: '#0d162f',
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  editClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#121f3d',
+    borderWidth: 1,
+    borderColor: '#1f2f59',
+  },
+  editModalContent: {
+    paddingBottom: 12,
+    gap: 10,
+  },
   modalTitle: {
     color: '#f8fbff',
     fontSize: 18,
@@ -1118,6 +1367,99 @@ const styles = StyleSheet.create({
     color: '#9fb4d8',
     fontSize: 12,
     marginTop: 6,
+  },
+  captureButton: {
+    marginTop: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: '#14f195',
+  },
+  captureText: {
+    color: '#032617',
+    fontWeight: '800',
+  },
+  photoDraft: {
+    width: '100%',
+    gap: 10,
+    marginTop: 12,
+  },
+  photoPreview: {
+    width: '100%',
+    height: 220,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#1f2f59',
+    backgroundColor: '#0b1220',
+  },
+  photoDescInput: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1f2f59',
+    backgroundColor: '#0f1f3d',
+    color: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 60,
+  },
+  photoActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  overlayContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  overlayCard: {
+    width: '94%',
+    maxWidth: 520,
+    backgroundColor: '#0d162f',
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  photoGrid: {
+    width: '100%',
+    marginTop: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  photoItem: {
+    width: '48%',
+    backgroundColor: '#0f1f3d',
+    borderRadius: 12,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#1f2f59',
+  },
+  photoThumb: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    borderRadius: 8,
+    backgroundColor: '#0b1220',
+  },
+  photoCaption: {
+    marginTop: 6,
+    color: '#d5defa',
+    fontSize: 12,
   },
   statsContainer: {
     padding: 16,

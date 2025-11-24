@@ -104,6 +104,24 @@ export default function FotoScreen() {
         }
       }
 
+      // Guardar intereses/etiquetas en el perfil para usar en el feed
+      try {
+        await fetch(`${API_BASE}/api/users/me`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            interestTags: registroData.intereses,
+            intereses: registroData.intereses,
+            tags: registroData.etiquetas,
+          }),
+        });
+      } catch (err) {
+        console.warn('[foto] no se pudieron guardar preferencias de usuario', err);
+      }
+
       await publicationsApi.create({
         title: registroData.conocimiento,
         content: registroData.descripcion,

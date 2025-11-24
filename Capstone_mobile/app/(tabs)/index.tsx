@@ -11,9 +11,11 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { PublicationCard } from '@/components/publication-card';
 import { Publication, publicationsApi } from '@/src/services/api';
@@ -21,6 +23,8 @@ import { getMyLikes, sendLike } from '@/src/services/interactions';
 import { logout } from '@/src/services/auth';
 import { auth } from '@/src/services/firebase';
 import { MatchModal } from '@/components/MatchModal';
+import { env } from '@/src/config/env';
+import { getAuthToken } from '@/src/services/auth';
 
 type PublicationState = Publication & { liked?: boolean };
 
@@ -36,12 +40,17 @@ export default function HomeScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
   const [authReady, setAuthReady] = useState(false);
+  const [viewerUid, setViewerUid] = useState<string | null>(auth.currentUser?.uid ?? null);
+  const [preferredTags, setPreferredTags] = useState<string[]>([]);
   const [matchModal, setMatchModal] = useState<{
     visible: boolean;
     matchId: string | null;
     otherUserName: string;
     otherUserPhoto: string | null;
   }>({ visible: false, matchId: null, otherUserName: '', otherUserPhoto: null });
+
+  // Usa icon.png por defecto; cambia a logo-s-glow.png cuando el archivo exista
+  const brandLogo = useMemo(() => require('../../assets/images/icon.png'), []);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query.trim()), 350);
@@ -79,32 +88,103 @@ export default function HomeScreen() {
     [debouncedQuery]
   );
 
+  const loadPreferredTags = useCallback(async () => {
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) return;
+      const token = await getAuthToken();
+      if (!token) return;
+      // Intentar /me primero para mantener consistencia con backend
+      const res = await fetch(`${env.apiUrl}/api/users/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const fallback = !res.ok
+        ? await fetch(`${env.apiUrl}/api/users/${uid}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => null)
+        : null;
+      const payload = res.ok ? await res.json() : await fallback?.json().catch(() => null);
+
+      const extractTags = (data: any) => {
+        if (!data) return [];
+        const candidates = [
+          data.interestTags,
+          data.intereses,
+          data.preferencias,
+          data.interests,
+          data.tagsPreferidos,
+        ];
+        for (const c of candidates) {
+          if (Array.isArray(c)) return c;
+          if (typeof c === 'string') return c.split(',').map((s) => s.trim());
+        }
+        return [];
+      };
+
+      const tags = extractTags(payload);
+      if (Array.isArray(tags)) {
+        setPreferredTags(tags.filter(Boolean));
+      }
+    } catch (err) {
+      console.warn('[home] no se pudieron cargar preferencias', err);
+    }
+  }, []);
+
   useEffect(() => {
-    setPosts(rawPosts.map((post) => ({ ...post, liked: !!likedMap[post.id] })));
-  }, [rawPosts, likedMap]);
+    const normalize = (values?: string[]) =>
+      (values || []).map((t) => t?.toUpperCase?.().trim()).filter(Boolean);
+
+    const filterByPreferences = (items: Publication[]) => {
+      const prefs = normalize(preferredTags || []);
+      const myUid = viewerUid || auth.currentUser?.uid || null;
+      if (!prefs.length && !myUid) return items;
+      return items.filter((post) => {
+        const tags = normalize(post.tags).concat(normalize(post.interestTags));
+        if (!tags.length) return false;
+        if (myUid) {
+          const owner =
+            (post as any).creatorId || (post as any).authorUid || (post as any).authorId || null;
+          if (owner && owner === myUid) return false;
+        }
+        if (!prefs.length) return true;
+        return tags.some((t) => prefs.includes(t));
+      });
+    };
+
+    const filtered = filterByPreferences(rawPosts);
+    const visible = filtered.filter((post) => !likedMap[post.id]);
+    setPosts(visible.map((post) => ({ ...post, liked: !!likedMap[post.id] })));
+  }, [rawPosts, likedMap, preferredTags, viewerUid]);
 
   const handleRefresh = useCallback(() => {
     loadLikes();
     loadPosts(true);
-  }, [loadLikes, loadPosts]);
+    loadPreferredTags();
+  }, [loadLikes, loadPosts, loadPreferredTags]);
 
   useFocusEffect(
     useCallback(() => {
       loadLikes();
       loadPosts(false);
-    }, [loadLikes, loadPosts])
+      loadPreferredTags();
+    }, [loadLikes, loadPosts, loadPreferredTags])
   );
 
   // Si se cierra sesión (Firebase) redirige al login
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((user) => {
+      if (user?.uid) setViewerUid(user.uid);
       setAuthReady(true);
       if (!user) {
         router.replace('/');
+      } else {
+        loadPreferredTags();
       }
     });
     return () => unsub();
-  }, [router]);
+  }, [router, loadPreferredTags]);
 
   const handleLike = useCallback(
     async (publication: PublicationState) => {
@@ -167,14 +247,18 @@ export default function HomeScreen() {
           ListHeaderComponent={
             <View style={styles.hero}>
               <View style={styles.heroHeader}>
-                <View style={styles.brandCircle}>
-                  <Text style={styles.brandInitials}>SS</Text>
-                </View>
                 <View style={styles.heroText}>
-                  <Text style={styles.brandTitle}>Tu feed SkillSwap</Text>
-                  <Text style={styles.brandSubtitle}>
-                    Revisa las últimas publicaciones y encuentra matches.
-                  </Text>
+                  <Text style={styles.brandTitle}>Skillswap</Text>
+                </View>
+                <View style={styles.heroActions}>
+                  <TouchableOpacity
+                    onPress={() => router.push('/explore')}
+                    style={styles.iconButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Abrir chat"
+                  >
+                    <Ionicons name="chatbubbles" size={18} color="#14f195" />
+                  </TouchableOpacity>
                 </View>
               </View>
               <TextInput
@@ -243,6 +327,7 @@ export default function HomeScreen() {
           otherUserPhoto={matchModal.otherUserPhoto}
           myPhoto={auth.currentUser?.photoURL || null}
         />
+
       </View>
     </SafeAreaView>
   );
@@ -270,35 +355,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    justifyContent: 'space-between',
   },
   brandCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#00dc8d',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#00dc8d',
-    shadowOpacity: 0.45,
-    shadowRadius: 12,
-  },
-  brandInitials: {
-    color: '#041a18',
-    fontWeight: '800',
-    fontSize: 18,
   },
   heroText: {
     flex: 1,
     gap: 4,
   },
   brandTitle: {
-    color: '#f7fbff',
-    fontSize: 22,
-    fontWeight: '700',
+    color: '#14f195',
+    fontSize: 18,
+    fontWeight: '800',
   },
   brandSubtitle: {
     color: '#9da6be',
     fontSize: 13,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#0b1220',
+    borderWidth: 1,
+    borderColor: '#14f195',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
   },
   logoutButton: {
     alignSelf: 'flex-start',

@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const { randomUUID } = require("crypto");
-require("dotenv").config();
+// Carga variables de entorno desde el archivo local "env" (sin punto inicial).
+require("dotenv").config({ path: "./env" });
 const logger = require("./utils/logger");
 
 const app = express();
@@ -66,8 +67,8 @@ app.use("/api/conversations", conversationsRoutes);
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 
 // --- Inicio del Servidor ---
-// Pone al servidor a escuchar peticiones en el puerto especificado.
-app.listen(PORT, () => {
+// Pone al servidor a escuchar peticiones en el puerto especificado y en todas las interfaces.
+app.listen(PORT, "0.0.0.0", () => {
   logger.info(`Backend corriendo en http://localhost:${PORT}`);
 });
 

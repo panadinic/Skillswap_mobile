@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getStoredSession } from '../services/auth';
-import { auth } from '../services/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { getStoredSession, getAuthToken } from '../services/auth';
+import { auth, db } from '../services/firebase';
 import { publicationsApi } from '../services/api';
 import { getReviewsByPost, Review } from '../services/reviews';
 import { env } from '../config/env';
@@ -76,10 +77,36 @@ export function useProfile(initialUserId?: string) {
   }, [resolvedUserId, viewerUid, initialUserId]);
 
   const fetchProfile = useCallback(async () => {
-    if (!resolvedUserId) return;
     setLoadingProfile(true);
     try {
+      if (!resolvedUserId) {
+        setError('Debes iniciar sesión para ver el perfil.');
+        return;
+      }
+
       const res = await fetch(`${env.apiUrl}/api/users/${resolvedUserId}`);
+
+      // Si no existe el doc y es tu propio perfil, intenta crearlo vía /me
+      if (res.status === 404 && isOwnProfile) {
+        const token = await getAuthToken();
+        if (token) {
+          await fetch(`${env.apiUrl}/api/users/me`, {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({}),
+          });
+          // Reintenta el GET
+          const retry = await fetch(`${env.apiUrl}/api/users/${resolvedUserId}`);
+          if (!retry.ok) throw new Error(`Error ${retry.status}`);
+          const dataRetry = await retry.json();
+          setProfile(dataRetry);
+          return;
+        }
+      }
+
       if (!res.ok) throw new Error(`Error ${res.status}`);
       const data = await res.json();
       setProfile(data);
@@ -88,7 +115,7 @@ export function useProfile(initialUserId?: string) {
     } finally {
       setLoadingProfile(false);
     }
-  }, [resolvedUserId]);
+  }, [resolvedUserId, isOwnProfile]);
 
   const fetchPosts = useCallback(async () => {
     if (!resolvedUserId) return;
@@ -125,7 +152,44 @@ export function useProfile(initialUserId?: string) {
     setCalendarError(null);
     try {
       const events = await getMyCalendar();
-      setCalendarEvents(events || []);
+
+      // Marcar eventos finalizados si existe al menos un resumen de sesion en la misma conversacion
+      const fetchCompletionStatuses = async (items: CalendarEvent[]) => {
+        const convos = Array.from(
+          new Set(
+            (items || [])
+              .map((e) => e.conversationId)
+              .filter((id): id is string => Boolean(id))
+          )
+        );
+        if (!convos.length) return {} as Record<string, boolean>;
+
+        const map: Record<string, boolean> = {};
+        // Firestore admite hasta 10 elementos en un "in"
+        for (let i = 0; i < convos.length; i += 10) {
+          const chunk = convos.slice(i, i + 10);
+          const q = query(collection(db, 'sessionSummaries'), where('conversationId', 'in', chunk));
+          const snap = await getDocs(q);
+          snap.forEach((doc) => {
+            const convoId = (doc.data() as any)?.conversationId;
+            if (convoId) map[convoId] = true;
+          });
+        }
+        return map;
+      };
+
+      let eventsWithStatus: CalendarEvent[] = events || [];
+      try {
+        const completionMap = await fetchCompletionStatuses(eventsWithStatus);
+        eventsWithStatus = eventsWithStatus.map((ev) => ({
+          ...ev,
+          status: completionMap[ev.conversationId || ''] ? 'completed' : ev.status,
+        }));
+      } catch (err) {
+        console.warn('[profile] no se pudo marcar eventos finalizados', err);
+      }
+
+      setCalendarEvents(eventsWithStatus || []);
     } catch (err: any) {
       setCalendarError(err?.message || 'No se pudieron obtener los eventos.');
     } finally {

@@ -5,6 +5,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -19,6 +20,7 @@ import { getStoredSession, loginWithEmail } from '@/src/services/auth';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -82,6 +84,9 @@ export default function LoginScreen() {
     );
   }
 
+  const horizontalPadding = Math.max(16, Math.min(28, width * 0.06));
+  const cardMaxWidth = Math.min(540, width - horizontalPadding * 2);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -89,11 +94,14 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingHorizontal: horizontalPadding, alignItems: 'center' },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.brandRow}>
+          <View style={[styles.brandRow, { width: '100%', maxWidth: cardMaxWidth }]}>
             <View style={styles.logoCircle}>
               <Text style={styles.logoText}>SS</Text>
             </View>
@@ -105,7 +113,7 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <View style={styles.card}>
+          <View style={[styles.card, { width: '100%', maxWidth: cardMaxWidth }]}>
             <Text style={styles.cardTitle}>Bienvenido de nuevo</Text>
             <Text style={styles.cardSubtitle}>Inicia sesión con tus credenciales</Text>
 

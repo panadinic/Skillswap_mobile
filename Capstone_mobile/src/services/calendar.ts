@@ -45,6 +45,7 @@ export interface CalendarEvent {
   conversationId?: string;
   matchId?: string;
   title?: string;
+  status?: string;
   partner?: {
     uid?: string;
     nombre?: string;

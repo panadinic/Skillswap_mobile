@@ -43,6 +43,7 @@ export default function RootLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack
         screenOptions={{
+          headerShown: false,
           animation: 'slide_from_right',
         }}
       >
@@ -106,12 +107,12 @@ export default function RootLayout() {
         }}
       />
       <Stack.Screen
-          name="register/foto"
-          options={{
-            headerShown: false,
-            presentation: 'card',
-          }}
-        />
+        name="register/foto"
+        options={{
+          headerShown: false,
+          presentation: 'card',
+        }}
+      />
         <Stack.Screen
           name="forgot"
           options={{

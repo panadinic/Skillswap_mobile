@@ -39,7 +39,7 @@ const TAG_OPTIONS = [
   'LITERATURA',
 ];
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 3;
 
 export default function CreatePublicationScreen() {
   const router = useRouter();
@@ -88,7 +88,7 @@ export default function CreatePublicationScreen() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaType.Images,
         quality: 0.85,
       });
       if (!result.canceled && result.assets?.[0]?.uri) {
@@ -164,8 +164,6 @@ export default function CreatePublicationScreen() {
                   ? 'Que le ofreces a SkillSwapp?'
                   : step === 1
                   ? 'Define tu conocimiento'
-                  : step === 2
-                  ? 'Que temas te interesan?'
                   : 'Sube una imagen'}
               </Text>
               <Text style={styles.subtitle}>
@@ -173,8 +171,6 @@ export default function CreatePublicationScreen() {
                   ? 'Cuentanos que habilidad compartiras con la comunidad.'
                   : step === 1
                   ? 'Elige las etiquetas que describen tu habilidad.'
-                  : step === 2
-                  ? 'Puedes marcar mas de una opcion.'
                   : 'Personaliza tu publicacion con una imagen.'}
               </Text>
             </View>
@@ -224,25 +220,6 @@ export default function CreatePublicationScreen() {
           )}
 
           {step === 2 && (
-            <View style={styles.formBlock}>
-              <View style={styles.chipsContainer}>
-                {TAG_OPTIONS.map((option) => {
-                  const active = form.interestTags.includes(option);
-                  return (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.chip, active && styles.chipActive]}
-                      onPress={() => toggleTag('interestTags', option)}
-                    >
-                      <Text style={[styles.chipText, active && styles.chipTextActive]}>{option}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
-          {step === 3 && (
             <View style={styles.formBlock}>
               <TouchableOpacity style={styles.uploadButton} onPress={pickImage} disabled={picking}>
                 <Ionicons name="image-outline" size={20} color="#0f172a" />

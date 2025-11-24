@@ -43,6 +43,9 @@ const timeAgo = (date: Date | null) => {
   return `${years} a`;
 };
 
+const cleanTag = (value: string) =>
+  value?.replace(/^(teach:|learn:)/i, '').trim() || value;
+
 const renderTags = (title: string, tags?: string[]) => {
   if (!tags || tags.length === 0) return null;
   return (
@@ -80,8 +83,15 @@ export function PublicationCard({ publication, liked, onToggleLike, onPressProfi
     publication.titulo ||
     'Publicacion sin titulo';
 
-  const teachTags = publication.tags || [];
-  const learnTags = publication.interestTags || [];
+  const teachTags = (publication.tags || [])
+    .filter((t) => !/^learn:/i.test(t))
+    .map(cleanTag);
+  const learnTags: string[] = [];
+  const ratingValue =
+    typeof publication.ratingAvg === 'number' && !Number.isNaN(publication.ratingAvg)
+      ? publication.ratingAvg
+      : 0;
+  const ratingLabel = ratingValue.toFixed(1);
 
   return (
     <View style={styles.card}>
@@ -98,11 +108,9 @@ export function PublicationCard({ publication, liked, onToggleLike, onPressProfi
           </View>
         </TouchableOpacity>
         <View style={styles.headerActions}>
-          {typeof publication.ratingAvg === 'number' && publication.ratingAvg > 0 && (
-            <View style={styles.rating}>
-              <Text style={styles.ratingText}>? {publication.ratingAvg.toFixed(1)}</Text>
-            </View>
-          )}
+          <View style={styles.rating}>
+            <Text style={styles.ratingText}>★ {ratingLabel}</Text>
+          </View>
           <TouchableOpacity
             style={[styles.likeButton, liked && styles.likeButtonActive]}
             onPress={onToggleLike}
@@ -117,12 +125,19 @@ export function PublicationCard({ publication, liked, onToggleLike, onPressProfi
         </View>
       </View>
 
-      {publication.imageUrl && (
-        <Image source={{ uri: publication.imageUrl }} style={styles.postImage} />
-      )}
+      <View style={styles.cover}>
+        {publication.imageUrl ? (
+          <Image source={{ uri: publication.imageUrl }} style={styles.coverImage} />
+        ) : (
+          <View style={styles.coverPlaceholder}>
+            <Ionicons name="image-outline" size={24} color="#9ca3af" />
+            <Text style={styles.coverPlaceholderText}>Sin imagen</Text>
+          </View>
+        )}
+      </View>
 
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.description} numberOfLines={4}>
+      <Text style={styles.description} numberOfLines={3}>
         {description}
       </Text>
 
@@ -200,6 +215,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#f472b6',
     borderColor: '#f472b6',
   },
+  cover: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#0b1220',
+    marginTop: 6,
+    marginBottom: 6,
+  },
+  coverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  coverPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0b1220',
+  },
+  coverPlaceholderText: {
+    color: '#9ca3af',
+    fontSize: 12,
+  },
   title: {
     color: '#f9fafb',
     fontSize: 18,
@@ -209,13 +248,6 @@ const styles = StyleSheet.create({
     color: '#d1d5db',
     fontSize: 15,
     lineHeight: 20,
-  },
-  postImage: {
-    width: '100%',
-    height: 160,
-    borderRadius: 12,
-    backgroundColor: '#1f2937',
-    marginBottom: 8,
   },
   tagRow: {
     marginTop: 4,
