@@ -1,7 +1,5 @@
-import { addDoc, collection, getDocs, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
-import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-
-import { auth, db, storage } from './firebase';
+import { getDownloadURL, getMetadata, listAll, ref, refFromURL, uploadBytes } from 'firebase/storage';
+import { auth, storage } from './firebase';
 
 export type UserPhoto = {
   id: string;
@@ -14,6 +12,7 @@ export type UserPhoto = {
 export async function uploadUserPhoto(localUri: string, descripcion: string) {
   const user = auth.currentUser;
   if (!user) throw new Error('Debes iniciar sesion.');
+  const nowIso = new Date().toISOString();
 
   const response = await fetch(localUri);
   const blob = await response.blob();
@@ -23,39 +22,67 @@ export async function uploadUserPhoto(localUri: string, descripcion: string) {
   );
   await uploadBytes(fileRef, blob, {
     contentType: blob.type || 'image/jpeg',
+    customMetadata: {
+      descripcion: descripcion || '',
+      createdAt: nowIso,
+    },
   });
   const url = await getDownloadURL(fileRef);
 
-  const docRef = await addDoc(collection(db, 'userPhotos'), {
-    uid: user.uid,
-    url,
-    descripcion: descripcion || '',
-    createdAt: serverTimestamp(),
-  });
-
   return {
-    id: docRef.id,
+    id: fileRef.name,
     url,
     descripcion,
+    createdAt: nowIso,
     uid: user.uid,
   } as UserPhoto;
 }
 
+export async function deleteUserPhoto(photo: UserPhoto) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Debes iniciar sesion.');
+  if (photo.uid !== user.uid) throw new Error('Solo puedes borrar tus propias fotos.');
+  const fileRef = photo.url.startsWith('http') ? refFromURL(photo.url) : ref(storage, photo.url);
+  await import('firebase/storage').then(({ deleteObject }) => deleteObject(fileRef));
+  return true;
+}
+
 export async function listUserPhotos(uid: string) {
-  const q = query(
-    collection(db, 'userPhotos'),
-    where('uid', '==', uid),
-    orderBy('createdAt', 'desc')
+  const loadFolder = async (path: string) => {
+    try {
+      const folderRef = ref(storage, path);
+      const listing = await listAll(folderRef);
+      const items = await Promise.all(
+        listing.items.map(async (itemRef) => {
+          const [url, meta] = await Promise.all([getDownloadURL(itemRef), getMetadata(itemRef)]);
+          const createdAt =
+            meta.customMetadata?.createdAt ||
+            meta.timeCreated ||
+            meta.updated ||
+            new Date().toISOString();
+          return {
+            id: itemRef.name,
+            url,
+            descripcion: meta.customMetadata?.descripcion || '',
+            createdAt,
+            uid,
+          } as UserPhoto;
+        })
+      );
+      return items;
+    } catch (err) {
+      // Si la carpeta no existe (p.ej. en el path viejo), devolvemos vacío
+      return [];
+    }
+  };
+
+  // Compatibilidad: primero el path correcto de reglas ("galery"), luego el legacy ("gallery")
+  const [galeryItems, legacyItems] = await Promise.all([
+    loadFolder(`uploads/galery/${uid}`),
+    loadFolder(`uploads/gallery/${uid}`),
+  ]);
+
+  return [...galeryItems, ...legacyItems].sort(
+    (a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
   );
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => {
-    const data = d.data() as any;
-    return {
-      id: d.id,
-      url: data.url,
-      descripcion: data.descripcion || '',
-      createdAt: data.createdAt?.toDate?.()?.toISOString?.(),
-      uid: data.uid,
-    } as UserPhoto;
-  });
 }

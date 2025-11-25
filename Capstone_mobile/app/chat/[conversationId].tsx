@@ -31,7 +31,6 @@ import {
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
-
 import { DEFAULT_AVATAR } from '@/constants/images';
 import { auth, db } from '@/src/services/firebase';
 import { getMatches, MatchSummary } from '@/src/services/interactions';
@@ -52,8 +51,6 @@ type ConversationMessage = {
 
 const ITEM_HEIGHT = 40;
 const MINUTE_STEP = 1;
-const HOUR_OFFSETS = Array.from({ length: 24 }, (_, i) => i * ITEM_HEIGHT);
-const MINUTE_OFFSETS = Array.from({ length: 60 }, (_, i) => i * ITEM_HEIGHT);
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -85,6 +82,21 @@ export default function ChatScreen() {
   const hoursRef = useRef<ScrollView>(null);
   const minutesRef = useRef<ScrollView>(null);
   const [scheduleError, setScheduleError] = useState('');
+  const [scheduleLocation, setScheduleLocation] = useState('');
+  const selectedDateLabel = useMemo(() => {
+    if (!pickerDate) return 'Selecciona un día del calendario';
+    const composed = new Date(pickerDate);
+    composed.setHours(pickerHour);
+    composed.setMinutes(pickerMinute);
+    return composed.toLocaleString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }, [pickerDate, pickerHour, pickerMinute]);
   const [isTyping, setIsTyping] = useState(false);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
@@ -168,7 +180,7 @@ export default function ChatScreen() {
           lastNotifiedId.current = last.id;
           const body =
             last.type === 'schedule'
-              ? 'Te enviaron una propuesta de reunión.'
+              ? 'Te enviaron una propuesta de reuni�n.'
               : last.text || 'Nuevo mensaje';
           Notifications.scheduleNotificationAsync({
             content: {
@@ -341,7 +353,7 @@ export default function ChatScreen() {
     const scheduleMsgs = messages.filter((msg) => msg.type === 'schedule');
     if (!scheduleMsgs.length) return { meeting: null, summaries: [] };
 
-    // Tomar la última reunión aceptada; si ninguna aceptada, no hay reunión vigente
+    // Tomar la �ltima reuni�n aceptada; si ninguna aceptada, no hay reuni�n vigente
     let lastAccepted: ConversationMessage | null = null;
     for (let i = scheduleMsgs.length - 1; i >= 0; i -= 1) {
       const sched = scheduleMsgs[i];
@@ -355,7 +367,7 @@ export default function ChatScreen() {
         break;
       }
       if (resolvedStatus === 'rejected') {
-        // si la última fue rechazada, no seguimos hacia atrás
+        // si la �ltima fue rechazada, no seguimos hacia atr�s
         break;
       }
     }
@@ -387,10 +399,10 @@ export default function ChatScreen() {
     const target = confirmedMeeting.eventAt.getTime();
     if (target <= now) {
       setMeetingStarted(true);
-      Alert.alert('Tu reunión ha iniciado');
+      Alert.alert('Tu reuni�n ha iniciado');
       Notifications.scheduleNotificationAsync({
         content: {
-          title: 'Tu reunión ha iniciado',
+          title: 'Tu reuni�n ha iniciado',
           body: 'Abre el chat para coordinar.',
         },
         trigger: null,
@@ -399,10 +411,10 @@ export default function ChatScreen() {
     }
     const timeout = setTimeout(() => {
       setMeetingStarted(true);
-      Alert.alert('Tu reunión ha iniciado');
+      Alert.alert('Tu reuni�n ha iniciado');
       Notifications.scheduleNotificationAsync({
         content: {
-          title: 'Tu reunión ha iniciado',
+          title: 'Tu reuni�n ha iniciado',
           body: 'Abre el chat para coordinar.',
         },
         trigger: null,
@@ -429,18 +441,18 @@ export default function ChatScreen() {
     if (!me || !convoId) return;
     
     if (!summaryData.temasVistos.trim() || summaryData.temasVistos.trim().length < 3) {
-      setSummaryError('Los temas vistos son obligatorios (mínimo 3 caracteres)');
+      setSummaryError('Los temas vistos son obligatorios (m�nimo 3 caracteres)');
       return;
     }
     
     const duracion = parseInt(summaryData.duracionMinutos);
     if (!duracion || duracion < 1 || duracion > 300) {
-      setSummaryError('La duración debe ser entre 1 y 300 minutos');
+      setSummaryError('La duraci�n debe ser entre 1 y 300 minutos');
       return;
     }
     
     if (summaryData.rating < 1 || summaryData.rating > 5) {
-      setSummaryError('Debes seleccionar una calificación (1-5 estrellas)');
+      setSummaryError('Debes seleccionar una calificaci�n (1-5 estrellas)');
       return;
     }
 
@@ -478,7 +490,7 @@ export default function ChatScreen() {
       console.log('[SUMMARY] Guardado en Firestore exitosamente');
       
       // Enviar mensaje al chat
-      const summaryText = `📋 Sesión completada\n⭐ ${summaryData.rating}/5\n🎯 ${summaryData.temasVistos}`;
+      const summaryText = `?? Sesi�n completada\n? ${summaryData.rating}/5\n?? ${summaryData.temasVistos}`;
       await addDoc(collection(db, 'conversations', convoId, 'messages'), {
         fromUid: me.uid,
         text: summaryText,
@@ -489,7 +501,7 @@ export default function ChatScreen() {
       
       await setDoc(
         doc(db, 'conversations', convoId),
-        { lastMessageText: 'Sesión completada', lastMessageAt: serverTimestamp() },
+        { lastMessageText: 'Sesi�n completada', lastMessageAt: serverTimestamp() },
         { merge: true }
       );
 
@@ -521,7 +533,7 @@ export default function ChatScreen() {
       }
     }
     if (!when || Number.isNaN(when.getTime())) {
-      setScheduleError('Selecciona fecha y hora válidas.');
+      setScheduleError('Selecciona fecha y hora v�lidas.');
       return;
     }
     if (when.getTime() < Date.now()) {
@@ -552,6 +564,7 @@ export default function ChatScreen() {
       setPickerTime('');
       setPickerHour(0);
       setPickerMinute(0);
+      setScheduleLocation('');
     } catch (err) {
       console.error('[chat] no se pudo agendar', err);
       setScheduleError(err?.message || 'No se pudo agendar.');
@@ -729,16 +742,17 @@ export default function ChatScreen() {
         </View>
       ) : (
         <FlatList
-          style={[styles.list, { paddingBottom: bottomInset }]}
-          ref={listRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
-          contentContainerStyle={[
-            styles.listContent,
-            {
-              paddingHorizontal: horizontalPadding,
-              width: '100%',
+            style={[styles.list, { paddingBottom: bottomInset }]}
+            ref={listRef}
+            data={messages}
+            keyExtractor={(item) => item.id}
+            renderItem={renderMessage}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.listContent,
+              {
+                paddingHorizontal: horizontalPadding,
+                width: '100%',
               flexGrow: 1,
             },
           ]}
@@ -836,7 +850,7 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.weekdayRow}>
-                {['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'].map((w) => (
+                {['lu', 'ma', 'mi', 'ju', 'vi', 's�', 'do'].map((w) => (
                   <Text key={w} style={styles.weekdayLabel}>
                     {w}
                   </Text>
@@ -887,30 +901,43 @@ export default function ChatScreen() {
               </View>
             </View>
 
+            <View style={styles.selectedDateWrapper}>
+              <Text style={styles.modalHelperLabel}>Fecha seleccionada</Text>
+              <Text style={styles.modalHelperValue}>{selectedDateLabel}</Text>
+            </View>
+
             <Text style={styles.modalLabel}>Hora</Text>
             <View style={styles.timeStepperWrapper}>
               <View style={styles.timeStepperRow}>
                 <View style={styles.timeStepper}>
                   <TouchableOpacity onPress={() => applyPickerTime((pickerHour + 23) % 24, pickerMinute)}>
-                    <Text style={styles.stepperControl}>▲</Text>
+                    <Ionicons name="chevron-up" size={18} color="#7ef2c8" />
                   </TouchableOpacity>
                   <Text style={styles.stepperValue}>{pickerHour.toString().padStart(2, '0')}</Text>
                   <TouchableOpacity onPress={() => applyPickerTime((pickerHour + 1) % 24, pickerMinute)}>
-                    <Text style={styles.stepperControl}>▼</Text>
+                    <Ionicons name="chevron-down" size={18} color="#7ef2c8" />
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.stepperSeparator}>:</Text>
                 <View style={styles.timeStepper}>
                   <TouchableOpacity onPress={() => applyPickerTime(pickerHour, (pickerMinute + 59) % 60)}>
-                    <Text style={styles.stepperControl}>▲</Text>
+                    <Ionicons name="chevron-up" size={18} color="#7ef2c8" />
                   </TouchableOpacity>
                   <Text style={styles.stepperValue}>{pickerMinute.toString().padStart(2, '0')}</Text>
                   <TouchableOpacity onPress={() => applyPickerTime(pickerHour, (pickerMinute + 1) % 60)}>
-                    <Text style={styles.stepperControl}>▼</Text>
+                    <Ionicons name="chevron-down" size={18} color="#7ef2c8" />
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Ej: Zoom, Teams o direccion fisica"
+              placeholderTextColor="#6b7280"
+              value={scheduleLocation}
+              onChangeText={setScheduleLocation}
+            />
 
             {scheduleError ? <Text style={styles.modalError}>{scheduleError}</Text> : null}
             <View style={styles.modalActions}>
@@ -927,9 +954,9 @@ export default function ChatScreen() {
 
       <Modal visible={showSummaryModal} animationType="fade" transparent onRequestClose={() => setShowSummaryModal(false)}>
         <View style={styles.modalOverlay}>
-          <ScrollView contentContainerStyle={styles.summaryScrollContent}>
+          <ScrollView contentContainerStyle={styles.summaryScrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>📋 Resumen de la Sesión</Text>
+              <Text style={styles.summaryTitle}>?? Resumen de la Sesi�n</Text>
               <Text style={styles.summarySubtitle}>con {otherUser?.nombre || 'Usuario'}</Text>
               
               <Text style={styles.summaryLabel}>Temas vistos *</Text>
@@ -941,7 +968,7 @@ export default function ChatScreen() {
                 placeholderTextColor="#6b7280"
               />
 
-              <Text style={styles.summaryLabel}>Duración (minutos) *</Text>
+              <Text style={styles.summaryLabel}>Duraci�n (minutos) *</Text>
               <TextInput
                 style={styles.modalInput}
                 value={summaryData.duracionMinutos}
@@ -956,11 +983,11 @@ export default function ChatScreen() {
                 style={styles.modalInput}
                 value={summaryData.logroClave}
                 onChangeText={(v) => setSummaryData({...summaryData, logroClave: v})}
-                placeholder="Ej: Creé mi primer programa"
+                placeholder="Ej: Cre� mi primer programa"
                 placeholderTextColor="#6b7280"
               />
 
-              <Text style={styles.summaryLabel}>Tarea próxima</Text>
+              <Text style={styles.summaryLabel}>Tarea pr�xima</Text>
               <TextInput
                 style={styles.modalInput}
                 value={summaryData.tareaProxima}
@@ -969,11 +996,11 @@ export default function ChatScreen() {
                 placeholderTextColor="#6b7280"
               />
 
-              <Text style={styles.summaryLabel}>Dificultad de la sesión</Text>
+              <Text style={styles.summaryLabel}>Dificultad de la sesi�n</Text>
               <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <TouchableOpacity key={star} onPress={() => setSummaryData({...summaryData, dificultad: star})}>
-                    <Text style={styles.star}>{summaryData.dificultad >= star ? '⭐' : '⚪'}</Text>
+                    <Text style={styles.star}>{summaryData.dificultad >= star ? '?' : '?'}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -982,7 +1009,7 @@ export default function ChatScreen() {
               <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <TouchableOpacity key={star} onPress={() => setSummaryData({...summaryData, rating: star})}>
-                    <Text style={styles.star}>{summaryData.rating >= star ? '⭐' : '⚪'}</Text>
+                    <Text style={styles.star}>{summaryData.rating >= star ? '?' : '?'}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -992,7 +1019,7 @@ export default function ChatScreen() {
                 style={[styles.modalInput, styles.textArea]}
                 value={summaryData.comentario}
                 onChangeText={(v) => setSummaryData({...summaryData, comentario: v})}
-                placeholder="Escribe tu opinión..."
+                placeholder="Escribe tu opini�n..."
                 placeholderTextColor="#6b7280"
                 multiline
                 numberOfLines={3}
@@ -1009,7 +1036,7 @@ export default function ChatScreen() {
                   onPress={saveSummary}
                   disabled={savingSummary}
                 >
-                  <Text style={styles.modalConfirmText}>{savingSummary ? 'Guardando...' : '💾 Guardar'}</Text>
+                  <Text style={styles.modalConfirmText}>{savingSummary ? 'Guardando...' : '?? Guardar'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1272,6 +1299,24 @@ const styles = StyleSheet.create({
   modalLabel: {
     color: '#9da7c9',
     marginTop: 6,
+  },
+  modalHelperLabel: {
+    color: '#7ef2c8',
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  modalHelperValue: {
+    color: '#cdd6f6',
+    fontWeight: '700',
+  },
+  selectedDateWrapper: {
+    marginTop: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#0b1224',
+    borderWidth: 1,
+    borderColor: '#1f2b54',
   },
   modalInput: {
     borderRadius: 14,

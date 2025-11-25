@@ -151,7 +151,7 @@ export default function CreatePublicationScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.card}>
           <View style={styles.header}>
             <TouchableOpacity onPress={goBack} style={styles.backButton}>

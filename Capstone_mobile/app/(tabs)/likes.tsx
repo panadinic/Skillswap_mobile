@@ -74,6 +74,7 @@ export default function LikesScreen() {
           <FlatList
             data={posts}
             keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={() => loadLikes(true)} tintColor="#fff" />
             }

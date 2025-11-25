@@ -255,16 +255,17 @@ export default function HomeScreen() {
   const showEmpty = useMemo(() => !loading && !error && posts.length === 0, [loading, error, posts]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
         <FlatList
-          data={posts}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
-          }
-          ListHeaderComponent={
+            data={posts}
+            keyExtractor={(item) => item.id}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContent}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
+            }
+            ListHeaderComponent={
             <View style={styles.hero}>
               <View style={styles.heroHeader}>
                 <View style={styles.heroText}>

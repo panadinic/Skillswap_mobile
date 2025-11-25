@@ -28,7 +28,7 @@ import { cancelCalendarEvent } from '@/src/services/calendar';
 import { createReview, Review } from '@/src/services/reviews';
 import { getMatches, MatchSummary } from '@/src/services/interactions';
 import { updateMyProfile } from '@/src/services/users';
-import { listUserPhotos, uploadUserPhoto, UserPhoto } from '@/src/services/photos';
+import { listUserPhotos, uploadUserPhoto, deleteUserPhoto, UserPhoto } from '@/src/services/photos';
 import { auth, storage } from '@/src/services/firebase';
 import { logout } from '@/src/services/auth';
 
@@ -59,6 +59,8 @@ export default function ProfileScreen() {
     loadingReviews,
     viewerUid,
   } = useProfile(paramUserId);
+  // user id que se está viendo (prop o propio)
+  const profileUserId = paramUserId || viewerUid;
   const [activeTab, setActiveTab] = useState('publicaciones');
   const [cancellingEvent, setCancellingEvent] = useState<string | null>(null);
   const [showReviewFormFor, setShowReviewFormFor] = useState<Publication | null>(null);
@@ -79,6 +81,7 @@ export default function ProfileScreen() {
   const [photoDescription, setPhotoDescription] = useState('');
   const [photos, setPhotos] = useState<UserPhoto[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [photoDeleting, setPhotoDeleting] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     nombre: '',
     bio: '',
@@ -88,9 +91,10 @@ export default function ProfileScreen() {
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-  
+
+  const canDeletePhotos = isOwnProfile && (!viewerUid || viewerUid === profileUserId);
+
   // Obtener el userId correcto
-  const profileUserId = paramUserId || viewerUid;
   console.log('[PROFILE] profileUserId:', profileUserId);
   console.log('[PROFILE] profile?.uid:', profile?.uid);
   
@@ -354,6 +358,23 @@ export default function ProfileScreen() {
     }
   }, [capturedPhoto, photoDescription]);
 
+  const handleDeletePhoto = useCallback(
+    async (photo: UserPhoto) => {
+      if (photoDeleting) return;
+      try {
+        setPhotoDeleting(photo.id);
+        await deleteUserPhoto(photo);
+        setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+        Alert.alert('Foto eliminada', 'La foto se eliminó de tu perfil.');
+      } catch (err: any) {
+        Alert.alert('No se pudo eliminar la foto', err?.message || 'Intenta nuevamente.');
+      } finally {
+        setPhotoDeleting(null);
+      }
+    },
+    [photoDeleting]
+  );
+
   const handleCancelEvent = useCallback(
     async (eventId: string) => {
       if (!eventId) return;
@@ -442,28 +463,20 @@ export default function ProfileScreen() {
     }
     if (activeTab === 'fotos') {
       return (
-        <View style={styles.stateBox}>
+        <View
+          style={[
+            styles.contentCard,
+            { width: '100%', paddingHorizontal: 20, paddingVertical: 16, gap: 10 },
+          ]}
+        >
           {isOwnProfile ? (
             <>
-              <Text style={styles.stateText}>Agrega fotos para mostrar en tu perfil.</Text>
               <View style={styles.photoCtas}>
                 <TouchableOpacity
-                  style={[styles.captureButton, capturing && { opacity: 0.6 }]}
-                  onPress={handleOpenCamera}
-                  disabled={capturing}
+                  style={styles.captureButton}
+                  onPress={() => router.push('/add-photo')}
                 >
-                  <Text style={styles.captureText}>
-                    {capturing ? 'Abriendo camara...' : 'Tomar foto'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.captureButton, capturing && { opacity: 0.6 }]}
-                  onPress={handlePickFromGallery}
-                  disabled={capturing}
-                >
-                  <Text style={styles.captureText}>
-                    {capturing ? 'Abriendo...' : 'Subir desde galeria'}
-                  </Text>
+                  <Text style={styles.captureText}>Subir foto</Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -517,9 +530,39 @@ export default function ProfileScreen() {
           ) : photos.length ? (
             <View style={styles.photoGrid}>
               {photos.map((p) => (
-                <View key={p.id} style={styles.photoItem}>
-                  <Image source={{ uri: p.url }} style={styles.photoThumb} />
-                  {p.descripcion ? <Text style={styles.photoCaption}>{p.descripcion}</Text> : null}
+                <View key={p.id} style={[styles.postCard, styles.photoPost, { marginHorizontal: 0 }]}>
+                  {canDeletePhotos ? (
+                    <TouchableOpacity
+                      style={styles.photoDelete}
+                      onPress={() => {
+                        Alert.alert('Eliminar foto', '¿Quieres eliminar esta foto?', [
+                          { text: 'Cancelar', style: 'cancel' },
+                          { text: 'Eliminar', style: 'destructive', onPress: () => handleDeletePhoto(p) },
+                        ]);
+                      }}
+                      disabled={photoDeleting === p.id}
+                      accessibilityLabel="Eliminar foto"
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={16}
+                        color={photoDeleting === p.id ? '#7a859f' : '#ff9aa2'}
+                      />
+                    </TouchableOpacity>
+                  ) : null}
+                  <View style={styles.photoHeaderRow}>
+                    <Image
+                      source={{ uri: profile.fotoUrl || DEFAULT_AVATAR }}
+                      style={styles.photoHeaderAvatar}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.photoHeaderName}>{profile?.nombre || 'Usuario'}</Text>
+                      {p.descripcion ? (
+                        <Text style={styles.photoHeaderDesc}>{p.descripcion}</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                  <Image source={{ uri: p.url }} style={styles.photoHero} />
                 </View>
               ))}
             </View>
@@ -646,6 +689,7 @@ export default function ProfileScreen() {
         styles.screenContent,
         { paddingHorizontal: horizontalPadding },
       ]}
+      showsVerticalScrollIndicator={false}
     >
       <TouchableOpacity
         style={[styles.backRow, { width: '100%', maxWidth: contentMaxWidth }]}
@@ -1419,20 +1463,23 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   captureButton: {
-    marginTop: 10,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
+    marginTop: 0,
+    paddingHorizontal: 28,
+    paddingVertical: 6,
     borderRadius: 14,
     backgroundColor: '#14f195',
+    minWidth: 180,
   },
   photoCtas: {
     flexDirection: 'row',
-    gap: 10,
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: -14,
+    marginBottom: 4,
   },
   captureText: {
     color: '#032617',
     fontWeight: '800',
+    textAlign: 'center',
   },
   photoDraft: {
     width: '100%',
@@ -1493,28 +1540,65 @@ const styles = StyleSheet.create({
   photoGrid: {
     width: '100%',
     marginTop: 16,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 12,
+    paddingHorizontal: 0,
   },
-  photoItem: {
-    width: '48%',
+  photoPost: {
     backgroundColor: '#0f1f3d',
-    borderRadius: 12,
-    padding: 8,
+    borderRadius: 16,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#1f2f59',
+    position: 'relative',
   },
-  photoThumb: {
+  photoDelete: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#0f233f',
+    borderWidth: 1,
+    borderColor: '#14f195',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  photoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  photoHeaderName: {
+    color: '#f8fbff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  photoHeaderDesc: {
+    color: '#9fb4d8',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  photoHeaderAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#18254a',
+    backgroundColor: '#0b1220',
+  },
+  photoHero: {
     width: '100%',
-    aspectRatio: 4 / 3,
-    borderRadius: 8,
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
     backgroundColor: '#0b1220',
   },
   photoCaption: {
     marginTop: 6,
     color: '#d5defa',
-    fontSize: 12,
+    fontSize: 13,
   },
   statsContainer: {
     padding: 16,
