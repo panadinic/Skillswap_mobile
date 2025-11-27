@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { randomUUID } = require("crypto");
 // Carga variables de entorno desde el archivo local "env" (sin punto inicial).
-require("dotenv").config({ path: "./env" });
+require("dotenv").config({ path: "./.env" });
 const logger = require("./utils/logger");
 
 const app = express();
@@ -42,6 +42,7 @@ app.use((req, res, next) => {
 
 // --- Carga de Rutas ---
 // Se importa los módulos que definen los endpoints de la API.
+const { db, auth } = require('./config/firebase');
 const authRoutes = require('./routes/authRoutes');
 const usersRoutes = require('./routes/usersRoutes');
 const publicationsRoutes = require('./routes/publicationsRoutes');
