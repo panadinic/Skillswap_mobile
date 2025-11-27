@@ -18,6 +18,41 @@ const RoundedBackground = ({ children }: { children: React.ReactNode }) => (
   </View>
 );
 
+const renderTabButton = (route: any, index: number, props: any, badgeByRoute: any) => {
+  const { options } = props.descriptors[route.key];
+  const isFocused = props.state.index === index;
+  const onPress = () => {
+    const event = props.navigation.emit({
+      type: 'tabPress',
+      target: route.key,
+      canPreventDefault: true,
+    });
+    if (!isFocused && !event.defaultPrevented) {
+      props.navigation.navigate(route.name);
+    }
+  };
+  const icon =
+    route.name === 'index'
+      ? 'home'
+      : route.name === 'likes'
+      ? 'heart'
+      : route.name === 'notifications'
+      ? 'notifications'
+      : route.name === 'profile'
+      ? 'person'
+      : 'ellipse';
+  return (
+    <TabButton
+      key={route.key}
+      onPress={onPress}
+      accessibilityState={{ selected: isFocused }}
+      icon={icon}
+      label={options.title ?? route.name}
+      badge={badgeByRoute[route.name as keyof typeof badgeByRoute] || 0}
+    />
+  );
+};
+
 const TabButton = (props: any) => {
   const { onPress, accessibilityState, icon, label, badge } = props;
   const active = accessibilityState.selected;
@@ -118,45 +153,20 @@ export default function TabLayout() {
           <RoundedBackground>
             {props.state.routes.map((route, index) => {
               if (route.name === 'explore') {
-                // Do not show a tab button for the hidden matches screen
                 return null;
               }
-              const { options } = props.descriptors[route.key];
-              const isFocused = props.state.index === index;
-              const onPress = () => {
-                const event = props.navigation.emit({
-                  type: 'tabPress',
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-                if (!isFocused && !event.defaultPrevented) {
-                  props.navigation.navigate(route.name);
-                }
-              };
-              const icon =
-                route.name === 'index'
-                  ? 'home'
-                  : route.name === 'likes'
-                  ? 'heart'
-                  : route.name === 'notifications'
-                  ? 'notifications'
-                  : route.name === 'profile'
-                  ? 'person'
-                  : 'ellipse';
-              return (
-                <TabButton
-                  key={route.key}
-                  onPress={onPress}
-                  accessibilityState={{ selected: isFocused }}
-                  icon={icon}
-                  label={options.title ?? route.name}
-                  badge={badgeByRoute[route.name as keyof typeof badgeByRoute] || 0}
-                />
-              );
+              if (route.name === 'notifications') {
+                return (
+                  <React.Fragment key={route.key}>
+                    <TouchableOpacity style={styles.fab} onPress={() => router.push('/create')}>
+                      <Ionicons name="add" size={26} color="#07a45a" />
+                    </TouchableOpacity>
+                    {renderTabButton(route, index, props, badgeByRoute)}
+                  </React.Fragment>
+                );
+              }
+              return renderTabButton(route, index, props, badgeByRoute);
             })}
-            <TouchableOpacity style={styles.fab} onPress={() => router.push('/create')}>
-              <Ionicons name="add" size={26} color="#07a45a" />
-            </TouchableOpacity>
           </RoundedBackground>
         );
       }}
@@ -209,7 +219,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     backgroundColor: '#00c48c',
     borderRadius: 999,
     paddingHorizontal: 32,
@@ -218,11 +228,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 16,
     elevation: 6,
+    gap: 8,
   },
   tabButton: {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
+    minWidth: 50,
   },
   tabLabel: {
     fontSize: 11,
@@ -252,10 +264,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   fab: {
-    position: 'absolute',
-    top: -24,
-    left: '50%',
-    marginLeft: -25,
     width: 50,
     height: 50,
     borderRadius: 25,

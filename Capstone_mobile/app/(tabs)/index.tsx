@@ -304,22 +304,54 @@ export default function HomeScreen() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => (
-            <PublicationCard
-              publication={item}
-              liked={item.liked}
-              onToggleLike={() => handleLike(item)}
-              onPressProfile={() => {
-                const targetUid = (item as any).authorUid || (item as any).creatorId;
-                if (targetUid) {
-                  router.push({
-                    pathname: '/profile/[userId]',
-                    params: { userId: targetUid },
-                  });
-                }
-              }}
-            />
-          )}
+          renderItem={({ item }) => {
+            const isOwner = viewerUid === ((item as any).authorUid || (item as any).creatorId);
+            return (
+              <PublicationCard
+                publication={item}
+                liked={item.liked}
+                isOwner={isOwner}
+                onToggleLike={() => handleLike(item)}
+                onDelete={() => {
+                  Alert.alert(
+                    'Eliminar publicación',
+                    '¿Estás seguro?',
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      {
+                        text: 'Eliminar',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const token = await getAuthToken();
+                            if (!token) throw new Error('No autenticado');
+                            const res = await fetch(`${env.apiUrl}/api/publications/${item.id}`, {
+                              method: 'DELETE',
+                              headers: { Authorization: `Bearer ${token}` },
+                            });
+                            if (!res.ok) throw new Error('No se pudo eliminar');
+                            setRawPosts(rawPosts.filter(p => p.id !== item.id));
+                            Alert.alert('Éxito', 'Publicación eliminada');
+                          } catch (err: any) {
+                            Alert.alert('Error', err?.message || 'No se pudo eliminar');
+                          }
+                        },
+                      },
+                    ]
+                  );
+                }}
+                onPressProfile={() => {
+                  const targetUid = (item as any).authorUid || (item as any).creatorId;
+                  if (targetUid) {
+                    router.push({
+                      pathname: '/profile/[userId]',
+                      params: { userId: targetUid },
+                    });
+                  }
+                }}
+              />
+            );
+          }}
         />
 
         {loading && (
@@ -369,7 +401,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#040315',
   },
   listContent: {
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   hero: {
     paddingHorizontal: 20,

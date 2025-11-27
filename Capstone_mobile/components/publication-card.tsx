@@ -9,6 +9,8 @@ type Props = {
   liked?: boolean;
   onToggleLike?: () => void;
   onPressProfile?: () => void;
+  onDelete?: () => void;
+  isOwner?: boolean;
 };
 
 const fallbackAvatar =
@@ -62,7 +64,7 @@ const renderTags = (title: string, tags?: string[]) => {
   );
 };
 
-export function PublicationCard({ publication, liked, onToggleLike, onPressProfile }: Props) {
+export function PublicationCard({ publication, liked, onToggleLike, onPressProfile, onDelete, isOwner }: Props) {
   const authorName =
     publication.authorName ||
     publication.creatorInfo?.nombre ||
@@ -111,6 +113,14 @@ export function PublicationCard({ publication, liked, onToggleLike, onPressProfi
           <View style={styles.rating}>
             <Text style={styles.ratingText}>★ {ratingLabel}</Text>
           </View>
+          {isOwner && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={onDelete}
+            >
+              <Ionicons name="trash" size={18} color="#ff6b7a" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.likeButton, liked && styles.likeButtonActive]}
             onPress={onToggleLike}
@@ -214,6 +224,16 @@ const styles = StyleSheet.create({
   likeButtonActive: {
     backgroundColor: '#f472b6',
     borderColor: '#f472b6',
+  },
+  deleteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#ff6b7a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
   },
   cover: {
     width: '100%',
