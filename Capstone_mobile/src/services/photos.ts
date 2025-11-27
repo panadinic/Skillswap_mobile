@@ -1,4 +1,4 @@
-import { getDownloadURL, getMetadata, listAll, ref, refFromURL, uploadBytes } from 'firebase/storage';
+import { deleteObject, getDownloadURL, getMetadata, listAll, ref, refFromURL, uploadBytes } from 'firebase/storage';
 import { auth, storage } from './firebase';
 
 export type UserPhoto = {
@@ -42,8 +42,8 @@ export async function deleteUserPhoto(photo: UserPhoto) {
   const user = auth.currentUser;
   if (!user) throw new Error('Debes iniciar sesion.');
   if (photo.uid !== user.uid) throw new Error('Solo puedes borrar tus propias fotos.');
-  const fileRef = photo.url.startsWith('http') ? refFromURL(photo.url) : ref(storage, photo.url);
-  await import('firebase/storage').then(({ deleteObject }) => deleteObject(fileRef));
+  const fileRef = refFromURL(photo.url);
+  await deleteObject(fileRef);
   return true;
 }
 

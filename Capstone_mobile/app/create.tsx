@@ -107,16 +107,22 @@ export default function CreatePublicationScreen() {
     if (!form.imageUri) return null;
     const user = auth.currentUser;
     if (!user) throw new Error('Necesitas iniciar sesion para subir la foto.');
-    const response = await fetch(form.imageUri);
-    const blob = await response.blob();
-    const fileRef = ref(
-      storage,
-      `uploads/publications/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
-    );
-    await uploadBytes(fileRef, blob, {
-      contentType: blob.type || 'image/jpeg',
-    });
-    return getDownloadURL(fileRef);
+    try {
+      const response = await fetch(form.imageUri);
+      const blob = await response.blob();
+      const fileRef = ref(
+        storage,
+        `uploads/publications/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+      );
+      await uploadBytes(fileRef, blob, {
+        contentType: blob.type || 'image/jpeg',
+      });
+      const url = await getDownloadURL(fileRef);
+      return url;
+    } catch (err: any) {
+      console.error('[create-post] upload image error', err);
+      throw new Error('No pudimos subir la imagen: ' + (err?.message || 'Error desconocido'));
+    }
   };
 
   const handlePublish = async () => {

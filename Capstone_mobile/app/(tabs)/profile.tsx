@@ -71,17 +71,8 @@ export default function ProfileScreen() {
   const [matchedUids, setMatchedUids] = useState<Set<string>>(new Set());
   const [loadingMatches, setLoadingMatches] = useState(false);
   const [expandedReviews, setExpandedReviews] = useState<Record<string, boolean>>({});
-  const [photoModal, setPhotoModal] = useState(false);
-  const [photoUrlInput, setPhotoUrlInput] = useState('');
-  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
-  const [capturing, setCapturing] = useState(false);
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [photoDescription, setPhotoDescription] = useState('');
-  const [photos, setPhotos] = useState<UserPhoto[]>([]);
-  const [loadingPhotos, setLoadingPhotos] = useState(false);
-  const [photoDeleting, setPhotoDeleting] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     nombre: '',
     bio: '',
@@ -91,8 +82,15 @@ export default function ProfileScreen() {
   });
   const [editError, setEditError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-
-  const canDeletePhotos = isOwnProfile && (!viewerUid || viewerUid === profileUserId);
+  const [photoModal, setPhotoModal] = useState(false);
+  const [photoUrlInput, setPhotoUrlInput] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [photoDescription, setPhotoDescription] = useState('');
+  const [photos, setPhotos] = useState<UserPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [photoDeleting, setPhotoDeleting] = useState<string | null>(null);
 
   // Obtener el userId correcto
   console.log('[PROFILE] profileUserId:', profileUserId);
@@ -163,6 +161,8 @@ export default function ProfileScreen() {
       loadPhotos(profileUserId);
     }
   }, [profileUserId, loadPhotos]);
+
+
 
   const canReviewPost = useCallback(
     (post: Publication) => {
@@ -375,6 +375,28 @@ export default function ProfileScreen() {
     [photoDeleting]
   );
 
+  const handleClearAllPhotos = useCallback(async () => {
+    if (!photos.length) return;
+    Alert.alert('Eliminar todas las fotos', '¿Quieres eliminar todas tus fotos?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar todo',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            for (const photo of photos) {
+              await deleteUserPhoto(photo);
+            }
+            setPhotos([]);
+            Alert.alert('Listo', 'Todas tus fotos han sido eliminadas.');
+          } catch (err: any) {
+            Alert.alert('Error', err?.message || 'No se pudieron eliminar las fotos.');
+          }
+        },
+      },
+    ]);
+  }, [photos]);
+
   const handleCancelEvent = useCallback(
     async (eventId: string) => {
       if (!eventId) return;
@@ -461,67 +483,19 @@ export default function ProfileScreen() {
         />
       );
     }
+
     if (activeTab === 'fotos') {
       return (
-        <View
-          style={[
-            styles.contentCard,
-            { width: '100%', paddingHorizontal: 20, paddingVertical: 16, gap: 10 },
-          ]}
-        >
+        <View style={[styles.contentCard, { width: '100%', paddingHorizontal: 20, paddingVertical: 16, gap: 10 }]}>
           {isOwnProfile ? (
-            <>
-              <View style={styles.photoCtas}>
-                <TouchableOpacity
-                  style={styles.captureButton}
-                  onPress={() => router.push('/add-photo')}
-                >
-                  <Text style={styles.captureText}>Subir foto</Text>
-                </TouchableOpacity>
-              </View>
-            </>
+            <View style={styles.photoCtas}>
+              <TouchableOpacity style={styles.captureButton} onPress={() => router.push('/add-photo')}>
+                <Text style={styles.captureText}>Subir foto</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <Text style={styles.stateText}>Fotos del usuario.</Text>
           )}
-
-          {capturedPhoto && isOwnProfile ? (
-            <View style={styles.overlayContainer} pointerEvents="box-none">
-              <View style={styles.overlayBackdrop} />
-              <View style={styles.overlayCard}>
-                <Text style={styles.modalTitle}>Nueva foto</Text>
-                <Image source={{ uri: capturedPhoto }} style={styles.photoPreview} />
-                <TextInput
-                  style={styles.photoDescInput}
-                  placeholder="Escribe una descripción"
-                  placeholderTextColor="#8aa0c6"
-                  value={photoDescription}
-                  onChangeText={setPhotoDescription}
-                  multiline
-                />
-                <View style={styles.photoActions}>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalCancel, { flex: 1 }]}
-                    onPress={() => {
-                      setCapturedPhoto(null);
-                      setPhotoDescription('');
-                    }}
-                  >
-                    <Text style={styles.modalCancelText}>Descartar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalButton, styles.modalConfirm, { flex: 1 }]}
-                    onPress={handleSavePhoto}
-                    disabled={capturing}
-                  >
-                    <Text style={styles.modalConfirmText}>
-                      {capturing ? 'Guardando...' : 'Guardar'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          ) : null}
-
           {loadingPhotos ? (
             <View style={styles.stateBox}>
               <ActivityIndicator color="#59f5c9" />
@@ -531,7 +505,7 @@ export default function ProfileScreen() {
             <View style={styles.photoGrid}>
               {photos.map((p) => (
                 <View key={p.id} style={[styles.postCard, styles.photoPost, { marginHorizontal: 0 }]}>
-                  {canDeletePhotos ? (
+                  {isOwnProfile ? (
                     <TouchableOpacity
                       style={styles.photoDelete}
                       onPress={() => {
@@ -543,23 +517,14 @@ export default function ProfileScreen() {
                       disabled={photoDeleting === p.id}
                       accessibilityLabel="Eliminar foto"
                     >
-                      <Ionicons
-                        name="trash-outline"
-                        size={16}
-                        color={photoDeleting === p.id ? '#7a859f' : '#ff9aa2'}
-                      />
+                      <Ionicons name="trash-outline" size={16} color={photoDeleting === p.id ? '#7a859f' : '#ff9aa2'} />
                     </TouchableOpacity>
                   ) : null}
                   <View style={styles.photoHeaderRow}>
-                    <Image
-                      source={{ uri: profile.fotoUrl || DEFAULT_AVATAR }}
-                      style={styles.photoHeaderAvatar}
-                    />
+                    <Image source={{ uri: profile.fotoUrl || DEFAULT_AVATAR }} style={styles.photoHeaderAvatar} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.photoHeaderName}>{profile?.nombre || 'Usuario'}</Text>
-                      {p.descripcion ? (
-                        <Text style={styles.photoHeaderDesc}>{p.descripcion}</Text>
-                      ) : null}
+                      {p.descripcion ? <Text style={styles.photoHeaderDesc}>{p.descripcion}</Text> : null}
                     </View>
                   </View>
                   <Image source={{ uri: p.url }} style={styles.photoHero} />

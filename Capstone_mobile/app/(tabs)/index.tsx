@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { PublicationCard } from '@/components/publication-card';
@@ -31,6 +32,7 @@ type PublicationState = Publication & { liked?: boolean };
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [rawPosts, setRawPosts] = useState<Publication[]>([]);
   const [posts, setPosts] = useState<PublicationState[]>([]);
   const [likedMap, setLikedMap] = useState<Record<string, boolean>>({});
@@ -256,12 +258,12 @@ export default function HomeScreen() {
 
   return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
+        <View style={[styles.container, { paddingBottom: insets.bottom + 100 }]}>
         <FlatList
             data={posts}
             keyExtractor={(item) => item.id}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={[styles.listContent, { paddingBottom: 20 }]}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
             }
@@ -395,13 +397,15 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#020617',
+    paddingBottom: 0,
   },
   container: {
     flex: 1,
     backgroundColor: '#040315',
+    paddingBottom: 100,
   },
   listContent: {
-    paddingBottom: 120,
+    paddingBottom: 20,
   },
   hero: {
     paddingHorizontal: 20,

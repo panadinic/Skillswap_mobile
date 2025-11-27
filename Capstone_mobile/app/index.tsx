@@ -158,19 +158,6 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.buttonGhost}
-              onPress={() =>
-                Alert.alert(
-                  'Próximamente',
-                  'Inicia sesión con Google estará disponible en una próxima actualización.'
-                )
-              }
-              disabled={loading}
-            >
-              <Text style={styles.buttonGhostText}>Continuar con Google</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity style={styles.buttonSecondary} onPress={handleRegister}>
               <Text style={styles.buttonSecondaryText}>Crear cuenta</Text>
             </TouchableOpacity>
