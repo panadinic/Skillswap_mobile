@@ -12,6 +12,7 @@ router.get('/:publicationId', publicationsController.getPublicationById);
 // --- Rutas Protegidas ---
 // Solo un usuario autenticado puede crear una nueva publicación o eliminar la propia.
 router.post('/', authMiddleware, publicationsController.createPublication);
+router.put('/:publicationId', authMiddleware, publicationsController.updatePublication);
 router.delete('/:publicationId', authMiddleware, publicationsController.deletePublication);
 
 module.exports = router;

@@ -37,9 +37,19 @@ export interface ProfileInput {
   region?: string | null;
 }
 
-export function updateMyProfile(payload: ProfileInput) {
-  return authRequest('/api/users/me', {
+export async function updateMyProfile(payload: ProfileInput) {
+  await authRequest('/api/users/me', {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
+  // Sincronizar datos en publicaciones si cambió nombre o foto
+  if (payload.nombre || payload.fotoUrl) {
+    try {
+      await authRequest('/api/users/sync-publications', {
+        method: 'POST',
+      });
+    } catch (err) {
+      console.warn('[users] No se pudo sincronizar publicaciones:', err);
+    }
+  }
 }

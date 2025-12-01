@@ -19,7 +19,7 @@ function deriveApiFromPackagerHost(): string | null {
   if (!hostUri || typeof hostUri !== 'string') return null;
   const [host] = hostUri.split(':');
   if (!host || host === 'localhost') return null;
-  return `http://${host}:5001`;
+  return `http://${host}:5000`;
 }
 
 const apiFromExtra =
@@ -29,6 +29,6 @@ const apiFromExtra =
   normalizeUrl(deriveApiFromPackagerHost());
 
 export const env = {
-  // Default al puerto 5001 donde corre el backend local.
-  apiUrl: apiFromExtra ?? 'http://localhost:5001',
+  // Default al puerto 5000 donde corre el backend local.
+  apiUrl: apiFromExtra ?? 'http://localhost:5000',
 };

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const usersController = require('../controllers/usersController');
+const syncController = require('../controllers/syncController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // --- Rutas Protegidas ---
@@ -8,6 +9,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 // Se aplica el middleware ANTES de pasar al controlador.
 router.get('/me', authMiddleware, usersController.getMyProfile);
 router.put('/me', authMiddleware, usersController.updateMyProfile);
+router.post('/sync-publications', authMiddleware, syncController.syncUserDataInPublications);
 
 // --- Ruta Pública ---
 // Esta ruta es pública. Cualquiera puede ver el perfil básico de un usuario si tiene su ID.

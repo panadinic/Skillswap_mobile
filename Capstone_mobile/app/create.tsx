@@ -88,7 +88,7 @@ export default function CreatePublicationScreen() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
-        mediaTypes: ImagePicker.MediaType.Images,
+        mediaTypes: 'images',
         quality: 0.85,
       });
       if (!result.canceled && result.assets?.[0]?.uri) {
@@ -112,7 +112,7 @@ export default function CreatePublicationScreen() {
       const blob = await response.blob();
       const fileRef = ref(
         storage,
-        `uploads/publications/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+        `Uploads/posts/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
       );
       await uploadBytes(fileRef, blob, {
         contentType: blob.type || 'image/jpeg',

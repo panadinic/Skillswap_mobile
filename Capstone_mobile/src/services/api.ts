@@ -89,4 +89,17 @@ export const publicationsApi = {
       body: JSON.stringify(payload),
     });
   },
+  update: async (publicationId: string, payload: Partial<CreatePublicationPayload>) => {
+    const token = await getAuthToken();
+    if (!token) {
+      throw new Error('Debes iniciar sesión para editar publicaciones.');
+    }
+    return request<Publication>(`/api/publications/${publicationId}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+  },
 };

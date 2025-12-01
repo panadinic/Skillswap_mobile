@@ -304,20 +304,126 @@ const deletePublication = async (req, res) => {
     const docRef = db.collection('publications').doc(publicationId);
     const doc = await docRef.get();
     if (!doc.exists) {
-      return res.status(404).json({ error: 'PublicaciA3n no encontrada.' });
+      return res.status(404).json({ error: 'PublicaciÃ³n no encontrada.' });
     }
 
     const data = doc.data();
     const ownerId = data.creatorId || data.authorUid;
     if (ownerId !== uid) {
-      return res.status(403).json({ error: 'No autorizado para eliminar esta publicaciA3n.' });
+      return res.status(403).json({ error: 'No autorizado para eliminar esta publicaciÃ³n.' });
     }
 
     await docRef.delete();
     return res.status(200).json({ deleted: true });
   } catch (error) {
-    console.error('Error al eliminar publicaciA3n:', error);
-    return res.status(500).json({ error: 'No se pudo eliminar la publicaciA3n.' });
+    console.error('Error al eliminar publicaciÃ³n:', error);
+    return res.status(500).json({ error: 'No se pudo eliminar la publicaciÃ³n.' });
+  }
+};
+
+const updatePublication = async (req, res) => {
+  try {
+    const { publicationId } = req.params;
+    const uid = req.user?.uid;
+    if (!uid) return res.status(401).json({ error: 'No autorizado' });
+    if (!publicationId) return res.status(400).json({ error: 'publicationId es obligatorio' });
+
+    const docRef = db.collection('publications').doc(publicationId);
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      return res.status(404).json({ error: 'PublicaciÃ³n no encontrada.' });
+    }
+
+    const data = doc.data();
+    const ownerId = data.creatorId || data.authorUid;
+    if (ownerId !== uid) {
+      return res.status(403).json({ error: 'No autorizado para editar esta publicaciÃ³n.' });
+    }
+
+    const {
+      title,
+      content,
+      imageUrl,
+      tags,
+      nivel,
+      modalidad,
+      ciudad,
+      region,
+    } = req.body;
+
+    const finalTitle = (title ?? data.title ?? data.titulo ?? '').toString().trim();
+    const finalContent = (content ?? data.content ?? data.descripcion ?? '').toString().trim();
+    if (!finalTitle && !finalContent) {
+      return res.status(400).json({ error: 'Debes enviar al menos un tÃ­tulo o contenido.' });
+    }
+
+    const updates = {};
+    if (title !== undefined) {
+      updates.title = finalTitle;
+      updates.titulo = finalTitle;
+    }
+    if (content !== undefined) {
+      updates.content = finalContent;
+      updates.descripcion = finalContent;
+    }
+    if (imageUrl !== undefined) {
+      updates.imageUrl = imageUrl;
+    }
+    if (nivel !== undefined) {
+      updates.nivel = nivel;
+    }
+    if (modalidad !== undefined) {
+      updates.modalidad = modalidad;
+    }
+    if (ciudad !== undefined) {
+      updates.ciudad = ciudad;
+    }
+    if (region !== undefined) {
+      updates.region = region;
+    }
+
+    const tagList = tags !== undefined ? (Array.isArray(tags) ? tags : []) : data.tags || [];
+    if (tags !== undefined) {
+      updates.tags = tagList;
+    }
+
+    if (
+      title !== undefined ||
+      content !== undefined ||
+      tags !== undefined ||
+      nivel !== undefined ||
+      modalidad !== undefined ||
+      ciudad !== undefined ||
+      region !== undefined
+    ) {
+      updates.searchTokens = buildSearchTokens(
+        finalTitle || data.title || data.titulo,
+        finalContent || data.content || data.descripcion,
+        [
+          ...tagList,
+          nivel ?? data.nivel,
+          modalidad ?? data.modalidad,
+          ciudad ?? data.ciudad,
+          region ?? data.region,
+        ],
+        data.authorName || data.creatorInfo?.nombre || ''
+      );
+    }
+
+    await docRef.update(updates);
+    const updatedDoc = await docRef.get();
+    const updatedData = updatedDoc.data();
+
+    return res.status(200).json({
+      id: updatedDoc.id,
+      ...updatedData,
+      ratingAvg: updatedData.ratingCount
+        ? (updatedData.ratingSum || 0) / updatedData.ratingCount
+        : 0,
+    });
+  } catch (error) {
+    console.error('Error al actualizar publicaciÃ³n:', error);
+    return res.status(500).json({ error: 'No se pudo actualizar la publicaciÃ³n.' });
   }
 };
 
@@ -328,4 +434,5 @@ module.exports = {
   searchPublications,
   getPublicationById,
   deletePublication,
+  updatePublication,
 };

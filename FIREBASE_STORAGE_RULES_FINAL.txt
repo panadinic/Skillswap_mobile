@@ -1,0 +1,31 @@
+REGLAS DE FIREBASE STORAGE - CONFIGURACIÓN FINAL
+================================================
+
+PROBLEMA IDENTIFICADO:
+- Error 404 en OPTIONS (CORS preflight)
+- Las rutas usan "Uploads" con mayúscula pero las reglas esperan "uploads" minúscula
+- Inconsistencia entre "galery" y "gallery"
+
+SOLUCIÓN:
+Aplicar estas reglas en Firebase Console > Storage > Rules:
+
+```
+
+```
+
+PASOS PARA APLICAR:
+1. Ir a Firebase Console: https://console.firebase.google.com
+2. Seleccionar proyecto "skillswappbd"
+3. Ir a Storage > Rules
+4. Copiar y pegar las reglas de arriba
+5. Hacer clic en "Publicar"
+
+VERIFICACIÓN:
+Después de aplicar las reglas, probar:
+- Subir foto de perfil desde la app
+- Subir foto a galería desde la app
+- Verificar que no hay errores 404 en la consola del navegador
+
+NOTA IMPORTANTE:
+La regla catch-all al final permite lectura/escritura amplia para debug.
+En producción, comentar o eliminar esa regla y usar solo las específicas.

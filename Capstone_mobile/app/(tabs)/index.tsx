@@ -137,30 +137,15 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    const normalize = (values?: string[]) =>
-      (values || []).map((t) => t?.toUpperCase?.().trim()).filter(Boolean);
-
-    const filterByPreferences = (items: Publication[]) => {
-      const prefs = normalize(preferredTags || []);
-      const myUid = viewerUid || auth.currentUser?.uid || null;
-      if (!prefs.length && !myUid) return items;
-      return items.filter((post) => {
-        const tags = normalize(post.tags).concat(normalize(post.interestTags));
-        if (!tags.length) return false;
-        if (myUid) {
-          const owner =
-            (post as any).creatorId || (post as any).authorUid || (post as any).authorId || null;
-          if (owner && owner === myUid) return false;
-        }
-        if (!prefs.length) return true;
-        return tags.some((t) => prefs.includes(t));
-      });
-    };
-
-    const filtered = filterByPreferences(rawPosts);
-    const visible = filtered.filter((post) => !likedMap[post.id]);
-    setPosts(visible.map((post) => ({ ...post, liked: !!likedMap[post.id] })));
-  }, [rawPosts, likedMap, preferredTags, viewerUid]);
+    const myUid = viewerUid || auth.currentUser?.uid || null;
+    const filtered = rawPosts.filter((post) => {
+      const owner = (post as any).creatorId || (post as any).authorUid || (post as any).authorId || null;
+      if (myUid && owner === myUid) return false;
+      if (likedMap[post.id]) return false;
+      return true;
+    });
+    setPosts(filtered.map((post) => ({ ...post, liked: !!likedMap[post.id] })));
+  }, [rawPosts, likedMap, viewerUid]);
 
   const handleRefresh = useCallback(() => {
     loadLikes();
@@ -235,21 +220,16 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     if (loggingOut) return;
+    setLoggingOut(true);
     try {
-      setLoggingOut(true);
       await logout();
-      router.replace('/');
-      // Fallback para web si el estado de navegación queda pegado
       if (Platform.OS === 'web') {
-        setTimeout(() => {
-          router.replace('/');
-          // Forzar reload para limpiar navegación en SPA
-          window.location.href = '/';
-        }, 20);
+        window.location.href = '/';
+      } else {
+        router.replace('/');
       }
     } catch (err: any) {
-      Alert.alert('No se pudo cerrar sesion', err?.message || 'Intenta nuevamente.');
-    } finally {
+      Alert.alert('Error', err?.message || 'No se pudo cerrar sesión');
       setLoggingOut(false);
     }
   };

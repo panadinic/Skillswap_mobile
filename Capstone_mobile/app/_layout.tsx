@@ -28,12 +28,11 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (checkingAuth || isLoggedIn === null) return;
+    if (checkingAuth) return;
     const inTabs = segments[0] === '(tabs)';
     if (!isLoggedIn && inTabs) {
       router.replace('/');
-    }
-    if (isLoggedIn && !inTabs && segments.length === 0) {
+    } else if (isLoggedIn && !inTabs && segments.length === 0) {
       router.replace('/(tabs)');
     }
   }, [checkingAuth, isLoggedIn, segments, router]);

@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 
 import { getStoredSession, loginWithEmail } from '@/src/services/auth';
+import { auth } from '@/src/services/firebase';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -33,20 +34,14 @@ export default function LoginScreen() {
   );
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const session = await getStoredSession();
-        if (session?.token && mounted) {
-          router.replace('/(tabs)');
-        }
-      } finally {
-        if (mounted) setCheckingSession(false);
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        router.replace('/(tabs)');
+      } else {
+        setCheckingSession(false);
       }
-    })();
-    return () => {
-      mounted = false;
-    };
+    });
+    return unsubscribe;
   }, [router]);
 
   const handleLogin = async () => {

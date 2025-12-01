@@ -22,13 +22,13 @@ export async function loginWithEmail(email: string, password: string) {
 }
 
 export async function logout() {
-  // Limpia sesión local incluso si signOut falla
   try {
+    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    await AsyncStorage.clear();
     await signOut(auth);
   } catch (err) {
-    console.warn('[auth] signOut falló, limpiando sesión local igual', err);
-  } finally {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY]);
+    console.warn('[auth] Error en logout', err);
+    await AsyncStorage.clear();
   }
 }
 

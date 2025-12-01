@@ -3,11 +3,13 @@ import {
   Alert,
   ActivityIndicator,
   FlatList,
+  Linking,
   Platform,
   KeyboardAvoidingView,
   Image,
   Modal,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -23,18 +25,19 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { DEFAULT_AVATAR } from '@/constants/images';
 import { useProfile } from '@/src/hooks/useProfile';
 import { useSessionStats } from '@/src/hooks/useSessionStats';
-import { Publication } from '@/src/services/api';
+import { Publication, publicationsApi } from '@/src/services/api';
 import { cancelCalendarEvent } from '@/src/services/calendar';
 import { createReview, Review } from '@/src/services/reviews';
 import { getMatches, MatchSummary } from '@/src/services/interactions';
 import { updateMyProfile } from '@/src/services/users';
-import { listUserPhotos, uploadUserPhoto, deleteUserPhoto, UserPhoto } from '@/src/services/photos';
+import { listUserPhotos, uploadUserPhoto, deleteUserPhoto, uploadPublicationImage, UserPhoto } from '@/src/services/photos';
 import { auth, storage } from '@/src/services/firebase';
-import { logout } from '@/src/services/auth';
+import { logout, getAuthToken } from '@/src/services/auth';
+import { env } from '@/src/config/env';
 
 const tabs = [
   { key: 'publicaciones', label: 'Publicaciones' },
-  { key: 'fotos', label: 'Fotos' },
+  { key: 'fotos', label: 'Galería' },
   { key: 'estadisticas', label: 'Estadísticas' },
   { key: 'calendario', label: 'Calendario' },
 ];
@@ -91,6 +94,84 @@ export default function ProfileScreen() {
   const [photos, setPhotos] = useState<UserPhoto[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [photoDeleting, setPhotoDeleting] = useState<string | null>(null);
+  const [postMenuOpen, setPostMenuOpen] = useState<string | null>(null);
+  const [menuModalPost, setMenuModalPost] = useState<Publication | null>(null);
+  const [editingPost, setEditingPost] = useState<Publication | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editLocalImage, setEditLocalImage] = useState<string | null>(null);
+  const [editPostSaving, setEditPostSaving] = useState(false);
+  const [editPostImageUploading, setEditPostImageUploading] = useState(false);
+
+  const openEditModal = useCallback((post: Publication) => {
+    setEditingPost(post);
+    setEditTitle(post.title || '');
+    const description = (post as any).content || (post as any).descripcion || '';
+    setEditContent(description);
+    setEditLocalImage(null);
+  }, []);
+
+  const closeEditModal = useCallback(() => {
+    setEditingPost(null);
+    setEditTitle('');
+    setEditContent('');
+    setEditLocalImage(null);
+    setEditPostImageUploading(false);
+    setEditPostSaving(false);
+  }, []);
+
+  const pickEditImage = useCallback(async () => {
+    if (!editingPost) return;
+    try {
+      setEditPostImageUploading(true);
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permiso requerido', 'Autoriza el acceso a fotos para cambiar la imagen.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets?.length) {
+        setEditLocalImage(result.assets[0].uri);
+      }
+    } catch (err: any) {
+      console.warn('[profile] error pick edit image', err);
+    } finally {
+      setEditPostImageUploading(false);
+    }
+  }, [editingPost]);
+
+  const handleUpdatePost = useCallback(async () => {
+    if (!editingPost) return;
+    const trimmedTitle = editTitle.trim();
+    const trimmedContent = editContent.trim();
+    if (!trimmedTitle && !trimmedContent) {
+      Alert.alert('Requisitos', 'Debes completar al menos el título o la descripción.');
+      return;
+    }
+    try {
+      setEditPostSaving(true);
+      let imageUrl = editingPost.imageUrl ?? null;
+      if (editLocalImage) {
+        imageUrl = await uploadPublicationImage(editLocalImage);
+      }
+      await publicationsApi.update(editingPost.id, {
+        title: trimmedTitle || undefined,
+        content: trimmedContent || undefined,
+        imageUrl: imageUrl ?? undefined,
+      });
+      Alert.alert('Actualizado', 'La publicación se guardó correctamente.');
+      reload();
+      closeEditModal();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'No se pudo actualizar la publicación.');
+    } finally {
+      setEditPostSaving(false);
+    }
+  }, [editingPost, editTitle, editContent, editLocalImage, reload, closeEditModal]);
 
   // Obtener el userId correcto
   console.log('[PROFILE] profileUserId:', profileUserId);
@@ -232,7 +313,7 @@ export default function ProfileScreen() {
                 : `Ver reseñas (${reviews.length})`}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => setMenuModalPost(item)}>
             <Ionicons name="ellipsis-horizontal" size={18} color="#cfd7ff" />
           </TouchableOpacity>
         </View>
@@ -273,21 +354,20 @@ export default function ProfileScreen() {
     )}:${pad(date.getMinutes())}`;
   }, []);
 
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+
   const handleLogout = async () => {
     if (loggingOut) return;
+    setLoggingOut(true);
     try {
-      setLoggingOut(true);
       await logout();
-      router.replace('/');
       if (Platform.OS === 'web') {
-        setTimeout(() => {
-          router.replace('/');
-          window.location.href = '/';
-        }, 20);
+        window.location.href = '/';
+      } else {
+        router.replace('/');
       }
     } catch (err: any) {
-      Alert.alert('No se pudo cerrar sesion', err?.message || 'Intenta nuevamente.');
-    } finally {
+      Alert.alert('Error', err?.message || 'No se pudo cerrar sesión');
       setLoggingOut(false);
     }
   };
@@ -329,7 +409,7 @@ export default function ProfileScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsEditing: true,
         quality: 0.85,
-        mediaTypes: ImagePicker.MediaType.Images,
+        mediaTypes: 'images',
       });
       if (!result.canceled && result.assets?.length) {
         setCapturedPhoto(result.assets[0].uri);
@@ -358,22 +438,7 @@ export default function ProfileScreen() {
     }
   }, [capturedPhoto, photoDescription]);
 
-  const handleDeletePhoto = useCallback(
-    async (photo: UserPhoto) => {
-      if (photoDeleting) return;
-      try {
-        setPhotoDeleting(photo.id);
-        await deleteUserPhoto(photo);
-        setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
-        Alert.alert('Foto eliminada', 'La foto se eliminó de tu perfil.');
-      } catch (err: any) {
-        Alert.alert('No se pudo eliminar la foto', err?.message || 'Intenta nuevamente.');
-      } finally {
-        setPhotoDeleting(null);
-      }
-    },
-    [photoDeleting]
-  );
+
 
   const handleClearAllPhotos = useCallback(async () => {
     if (!photos.length) return;
@@ -413,7 +478,76 @@ export default function ProfileScreen() {
     [reload]
   );
 
-  const content = useMemo(() => {
+  const handleDeletePhoto = useCallback(async (photo: UserPhoto) => {
+    Alert.alert('Eliminar foto', '¿Quieres eliminar esta foto?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setPhotoDeleting(photo.id);
+            await deleteUserPhoto(photo);
+            setPhotos(prev => prev.filter(p => p.id !== photo.id));
+            Alert.alert('Éxito', 'Foto eliminada');
+          } catch (err: any) {
+            Alert.alert('Error', err?.message || 'No se pudo eliminar');
+          } finally {
+            setPhotoDeleting(null);
+          }
+        }
+      }
+    ]);
+  }, []);
+
+  const handleDeletePost = useCallback(async (postId: string, postTitle: string) => {
+    Alert.alert('Eliminar publicación', `¿Estás seguro de eliminar "${postTitle}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const token = await getAuthToken();
+            if (!token) throw new Error('No autenticado');
+            const res = await fetch(`${env.apiUrl}/api/publications/${postId}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) throw new Error('No se pudo eliminar');
+            await reload();
+            Alert.alert('Éxito', 'Publicación eliminada');
+          } catch (err: any) {
+            Alert.alert('Error', err?.message || 'No se pudo eliminar');
+          }
+        }
+      }
+    ]);
+  }, [reload]);
+
+  const handleSharePost = useCallback(async (post: Publication) => {
+    try {
+      const title = post.title || (post as any).titulo || 'Publicación en SkillSwap';
+      const message = `${title} - revisa esta publicación en SkillSwap.\n\nMás info en ${env.apiUrl}`;
+      await Share.share({ message });
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'No se pudo compartir la publicación.');
+    }
+  }, []);
+
+  const handleReportPost = useCallback(async (post: Publication) => {
+    try {
+      const subject = encodeURIComponent(`Reportar publicación ${post.id}`);
+      const body = encodeURIComponent(
+        `Estoy reportando la publicación "${post.title || (post as any).titulo}" porque…`
+      );
+      await Linking.openURL(`mailto:report@skillswap.app?subject=${subject}&body=${body}`);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'No se pudo abrir el correo para reportar.');
+    }
+  }, []);
+
+  const renderContent = () => {
     if (activeTab === 'estadisticas') {
       if (loadingStats) {
         return (
@@ -505,21 +639,15 @@ export default function ProfileScreen() {
             <View style={styles.photoGrid}>
               {photos.map((p) => (
                 <View key={p.id} style={[styles.postCard, styles.photoPost, { marginHorizontal: 0 }]}>
-                  {isOwnProfile ? (
+                  {isOwnProfile && (
                     <TouchableOpacity
                       style={styles.photoDelete}
-                      onPress={() => {
-                        Alert.alert('Eliminar foto', '¿Quieres eliminar esta foto?', [
-                          { text: 'Cancelar', style: 'cancel' },
-                          { text: 'Eliminar', style: 'destructive', onPress: () => handleDeletePhoto(p) },
-                        ]);
-                      }}
-                      disabled={photoDeleting === p.id}
-                      accessibilityLabel="Eliminar foto"
+                      onPress={() => handleDeletePhoto(p)}
+                      disabled={!!photoDeleting}
                     >
-                      <Ionicons name="trash-outline" size={16} color={photoDeleting === p.id ? '#7a859f' : '#ff9aa2'} />
+                      <Ionicons name="trash" size={20} color="#fff" />
                     </TouchableOpacity>
-                  ) : null}
+                  )}
                   <View style={styles.photoHeaderRow}>
                     <Image source={{ uri: profile.fotoUrl || DEFAULT_AVATAR }} style={styles.photoHeaderAvatar} />
                     <View style={{ flex: 1 }}>
@@ -624,18 +752,7 @@ export default function ProfileScreen() {
         <Text style={styles.stateText}>Seccion en construccion.</Text>
       </View>
     );
-  }, [
-    activeTab,
-    calendarError,
-    calendarEvents,
-    cancellingEvent,
-    formatEventDate,
-    handleCancelEvent,
-    isOwnProfile,
-    loadingCalendar,
-    loadingPosts,
-    posts,
-  ]);
+  };
 
   if (initializing || loadingProfile || !profile) {
     return (
@@ -691,7 +808,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.logoutButton, loggingOut && { opacity: 0.6 }]}
-                onPress={handleLogout}
+                onPress={() => setLogoutModalOpen(true)}
                 disabled={loggingOut}
               >
                 <Ionicons name="log-out-outline" size={18} color="#fff" />
@@ -723,7 +840,7 @@ export default function ProfileScreen() {
       </View>
 
       <View style={[styles.contentCard, { width: '100%', maxWidth: contentMaxWidth }]}>
-        {content}
+        {renderContent()}
       </View>
 
       <Modal
@@ -815,6 +932,66 @@ export default function ProfileScreen() {
               >
                 <Text style={styles.modalConfirmText}>
                   {savingReview ? 'Enviando...' : 'Enviar'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={!!editingPost}
+        transparent
+        animationType="fade"
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { width: '90%', maxWidth: 420 }]}>
+            <Text style={styles.modalTitle}>Editar publicación</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Título"
+              placeholderTextColor="#6b7280"
+              value={editTitle}
+              onChangeText={setEditTitle}
+            />
+            <TextInput
+              style={[styles.modalInput, { height: 100 }]}
+              placeholder="Describe los cambios"
+              placeholderTextColor="#6b7280"
+              multiline
+              textAlignVertical="top"
+              value={editContent}
+              onChangeText={setEditContent}
+            />
+            {(editLocalImage || editingPost?.imageUrl) ? (
+              <Image
+                source={{ uri: editLocalImage || editingPost?.imageUrl || undefined }}
+                style={styles.editImagePreview}
+              />
+            ) : null}
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalSecondary]}
+              onPress={pickEditImage}
+              disabled={editPostImageUploading}
+            >
+              {editPostImageUploading ? (
+                <ActivityIndicator color="#0f172a" />
+              ) : (
+                <Text style={styles.modalSecondaryText}>Cambiar imagen</Text>
+              )}
+            </TouchableOpacity>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalButton, styles.modalCancel]} onPress={closeEditModal}>
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalConfirm, editPostSaving && { opacity: 0.65 }]}
+                onPress={handleUpdatePost}
+                disabled={editPostSaving}
+              >
+                <Text style={styles.modalConfirmText}>
+                  {editPostSaving ? 'Guardando...' : 'Guardar cambios'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -937,7 +1114,7 @@ export default function ProfileScreen() {
                   }
                   const result = await ImagePicker.launchImageLibraryAsync({
                     allowsEditing: true,
-                    mediaTypes: ImagePicker.MediaType.Images,
+                    mediaTypes: 'images',
                     quality: 0.85,
                   });
                   if (result.canceled || !result.assets?.length) return;
@@ -948,7 +1125,7 @@ export default function ProfileScreen() {
                   const blob = await response.blob();
                   const fileRef = ref(
                     storage,
-                    `uploads/avatars/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
+                    `Uploads/avatars/${user.uid}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`
                   );
                   await uploadBytes(fileRef, blob, {
                     contentType: blob.type || 'image/jpeg',
@@ -1018,6 +1195,95 @@ export default function ProfileScreen() {
             {editError ? <Text style={styles.modalError}>{editError}</Text> : null}
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={!!menuModalPost}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuModalPost(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{menuModalPost?.title || 'Opciones'}</Text>
+            {isOwnProfile ? (
+              <>
+                <TouchableOpacity style={styles.menuOption} onPress={() => {
+                  const post = menuModalPost;
+                  setMenuModalPost(null);
+                  if (post) openEditModal(post);
+                }}>
+                  <Ionicons name="create-outline" size={20} color="#14f195" />
+                  <Text style={styles.menuOptionText}>Editar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.menuOption} onPress={() => {
+                  const postId = menuModalPost?.id;
+                  const postTitle = menuModalPost?.title || 'publicación';
+                  setMenuModalPost(null);
+                  if (postId) {
+                    handleDeletePost(postId, postTitle);
+                  }
+                }}>
+                  <Ionicons name="trash" size={20} color="#ff6b7a" />
+                  <Text style={styles.menuOptionText}>Eliminar</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity style={styles.menuOption} onPress={() => {
+                  const post = menuModalPost;
+                  setMenuModalPost(null);
+                  if (post) handleSharePost(post);
+                }}>
+                  <Ionicons name="share-outline" size={20} color="#14f195" />
+                  <Text style={styles.menuOptionText}>Compartir</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.menuOption} onPress={() => {
+                  const post = menuModalPost;
+                  setMenuModalPost(null);
+                  if (post) handleReportPost(post);
+                }}>
+                  <Ionicons name="flag-outline" size={20} color="#ffd44f" />
+                  <Text style={styles.menuOptionText}>Reportar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity style={[styles.modalButton, styles.modalCancel]} onPress={() => setMenuModalPost(null)}>
+              <Text style={styles.modalCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={logoutModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLogoutModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Cerrar sesión</Text>
+            <Text style={styles.modalSubtitle}>¿Estás seguro que deseas salir?</Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancel]}
+                onPress={() => setLogoutModalOpen(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#ff6b7a' }]}
+                onPress={() => {
+                  setLogoutModalOpen(false);
+                  handleLogout();
+                }}
+              >
+                <Text style={styles.modalConfirmText}>Salir</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </ScrollView>
   );
@@ -1419,6 +1685,22 @@ const styles = StyleSheet.create({
     color: '#032415',
     fontWeight: '700',
   },
+  modalSecondary: {
+    backgroundColor: '#1f2f59',
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  modalSecondaryText: {
+    color: '#c7d5ff',
+    fontWeight: '700',
+  },
+  editImagePreview: {
+    width: '100%',
+    height: 160,
+    borderRadius: 16,
+    marginTop: 12,
+    backgroundColor: '#0b1020',
+  },
   modalError: {
     color: '#ff9a9a',
   },
@@ -1518,17 +1800,16 @@ const styles = StyleSheet.create({
   },
   photoDelete: {
     position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#0f233f',
-    borderWidth: 1,
-    borderColor: '#14f195',
+    top: 8,
+    right: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ff6b7a',
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 2,
+    zIndex: 999,
+    elevation: 5,
   },
   photoHeaderRow: {
     flexDirection: 'row',
@@ -1636,5 +1917,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginTop: 4,
+  },
+  menuOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#101b3c',
+    marginVertical: 4,
+  },
+  menuOptionText: {
+    color: '#f8fbff',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
