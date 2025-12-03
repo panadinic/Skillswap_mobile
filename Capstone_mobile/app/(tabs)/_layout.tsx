@@ -36,6 +36,8 @@ const renderTabButton = (route: any, index: number, props: any, badgeByRoute: an
       ? 'home'
       : route.name === 'likes'
       ? 'heart'
+      : route.name === 'explore'
+      ? 'chatbubbles'
       : route.name === 'notifications'
       ? 'notifications'
       : route.name === 'profile'
@@ -128,11 +130,15 @@ export default function TabLayout() {
 
   const badgeByRoute = useMemo(
     () => ({
-      likes: 0,
-      notifications: unreadNotifications + unreadChats,
+      explore: unreadChats,
+      notifications: unreadNotifications,
+      index: 0,
+      profile: 0,
     }),
     [unreadChats, unreadNotifications]
   );
+
+  const orderedNames = ['index', 'explore', 'notifications', 'profile'] as const;
 
   return (
     <Tabs
@@ -144,28 +150,27 @@ export default function TabLayout() {
         tabBarButton: (props) => <HapticTab {...props} />,
       }}
       tabBar={(props) => {
-        const activeRoute = props.state.routes[props.state.index]?.name;
-        if (activeRoute === 'explore') {
-          // Hide bottom bar on the matches screen
-          return null;
-        }
+        const routeByName = Object.fromEntries(props.state.routes.map((r) => [r.name, r]));
+        // Build buttons en orden: Home, Chats, Alertas, Perfil. Fab va despues de Chats.
         return (
           <RoundedBackground>
-            {props.state.routes.map((route, index) => {
-              if (route.name === 'explore') {
-                return null;
-              }
-              if (route.name === 'notifications') {
+            {orderedNames.map((name) => {
+              const route = routeByName[name];
+              if (!route || name === 'likes') return null;
+              const index = props.state.routes.findIndex((r) => r.key === route.key);
+              // Insert FAB after Chats (explore)
+              const button = renderTabButton(route, index, props, badgeByRoute);
+              if (name === 'explore') {
                 return (
                   <React.Fragment key={route.key}>
+                    {button}
                     <TouchableOpacity style={styles.fab} onPress={() => router.push('/create')}>
                       <Ionicons name="add" size={26} color="#07a45a" />
                     </TouchableOpacity>
-                    {renderTabButton(route, index, props, badgeByRoute)}
                   </React.Fragment>
                 );
               }
-              return renderTabButton(route, index, props, badgeByRoute);
+              return button;
             })}
           </RoundedBackground>
         );
@@ -181,6 +186,7 @@ export default function TabLayout() {
         name="likes"
         options={{
           title: 'Likes',
+          href: null,
         }}
       />
       <Tabs.Screen
@@ -198,8 +204,6 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
-          // Hidden from bottom bar, used for matches screen
-          href: null,
           title: 'Chats',
         }}
       />
@@ -219,7 +223,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     backgroundColor: '#00c48c',
     borderRadius: 999,
     paddingHorizontal: 32,

@@ -255,17 +255,12 @@ export default function HomeScreen() {
                 </View>
                 <View style={styles.heroActions}>
                   <TouchableOpacity
-                    onPress={() => router.push('/explore')}
+                    onPress={() => router.push('/likes')}
                     style={styles.iconButton}
                     accessibilityRole="button"
-                    accessibilityLabel="Abrir chat"
+                    accessibilityLabel="Abrir likes"
                   >
-                    <Ionicons name="chatbubbles" size={18} color="#14f195" />
-                    {unreadChats > 0 && (
-                      <View style={styles.chatBadge}>
-                        <Text style={styles.chatBadgeText}>{unreadChats > 9 ? '9+' : unreadChats}</Text>
-                      </View>
-                    )}
+                    <Ionicons name="heart" size={18} color="#ff6b7a" />
                   </TouchableOpacity>
                 </View>
               </View>

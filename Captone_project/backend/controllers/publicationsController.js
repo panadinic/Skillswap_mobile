@@ -148,20 +148,31 @@ const getAllPublications = async (_req, res) => {
       return res.status(200).json([]);
     }
 
-    const publications = snapshot.docs.map(doc => {
-      const data = doc.data();
-      console.log(`[GET PUBLICATIONS] Publication ${doc.id}:`, {
-        title: data.title || data.titulo,
-        creator: data.creatorInfo?.nombre,
-        activo: data.activo,
-        fechaCreacion: data.fechaCreacion
-      });
-      return {
-        id: doc.id,
-        ...data,
-        ratingAvg: data.ratingCount ? (data.ratingSum || 0) / data.ratingCount : 0,
-      };
-    });
+    const publications = snapshot.docs
+      .map(doc => {
+        const data = doc.data();
+        const created =
+          data?.fechaCreacion?.toDate?.() ??
+          (typeof data?.fechaCreacion?._seconds === 'number'
+            ? new Date(data.fechaCreacion._seconds * 1000)
+            : null);
+
+        console.log(`[GET PUBLICATIONS] Publication ${doc.id}:`, {
+          title: data.title || data.titulo,
+          creator: data.creatorInfo?.nombre,
+          activo: data.activo,
+          fechaCreacion: data.fechaCreacion
+        });
+        return {
+          id: doc.id,
+          ...data,
+          ratingAvg: data.ratingCount ? (data.ratingSum || 0) / data.ratingCount : 0,
+          _createdAt: created ? created.getTime() : 0,
+        };
+      })
+      // Orden extra por fecha de creacion descendente para asegurar consistencia
+      .sort((a, b) => (b._createdAt || 0) - (a._createdAt || 0))
+      .map(({ _createdAt, ...rest }) => rest);
 
     console.log(`[GET PUBLICATIONS] Returning ${publications.length} publications`);
     res.status(200).json(publications);

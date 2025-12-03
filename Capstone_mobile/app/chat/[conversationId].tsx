@@ -180,7 +180,7 @@ export default function ChatScreen() {
           lastNotifiedId.current = last.id;
           const body =
             last.type === 'schedule'
-              ? 'Te enviaron una propuesta de reuni�n.'
+              ? 'Te enviaron una propuesta de reunion.'
               : last.text || 'Nuevo mensaje';
           Notifications.scheduleNotificationAsync({
             content: {
@@ -353,7 +353,7 @@ export default function ChatScreen() {
     const scheduleMsgs = messages.filter((msg) => msg.type === 'schedule');
     if (!scheduleMsgs.length) return { meeting: null, summaries: [] };
 
-    // Tomar la �ltima reuni�n aceptada; si ninguna aceptada, no hay reuni�n vigente
+    // Tomar la ultima reunion aceptada; si ninguna aceptada, no hay reunion vigente
     let lastAccepted: ConversationMessage | null = null;
     for (let i = scheduleMsgs.length - 1; i >= 0; i -= 1) {
       const sched = scheduleMsgs[i];
@@ -367,7 +367,7 @@ export default function ChatScreen() {
         break;
       }
       if (resolvedStatus === 'rejected') {
-        // si la �ltima fue rechazada, no seguimos hacia atr�s
+        // si la ultima fue rechazada, no seguimos hacia atras
         break;
       }
     }
@@ -399,10 +399,10 @@ export default function ChatScreen() {
     const target = confirmedMeeting.eventAt.getTime();
     if (target <= now) {
       setMeetingStarted(true);
-      Alert.alert('Tu reuni�n ha iniciado');
+      Alert.alert('Tu reunion ha iniciado');
       Notifications.scheduleNotificationAsync({
         content: {
-          title: 'Tu reuni�n ha iniciado',
+          title: 'Tu reunion ha iniciado',
           body: 'Abre el chat para coordinar.',
         },
         trigger: null,
@@ -411,10 +411,10 @@ export default function ChatScreen() {
     }
     const timeout = setTimeout(() => {
       setMeetingStarted(true);
-      Alert.alert('Tu reuni�n ha iniciado');
+      Alert.alert('Tu reunion ha iniciado');
       Notifications.scheduleNotificationAsync({
         content: {
-          title: 'Tu reuni�n ha iniciado',
+          title: 'Tu reunion ha iniciado',
           body: 'Abre el chat para coordinar.',
         },
         trigger: null,
@@ -441,18 +441,18 @@ export default function ChatScreen() {
     if (!me || !convoId) return;
     
     if (!summaryData.temasVistos.trim() || summaryData.temasVistos.trim().length < 3) {
-      setSummaryError('Los temas vistos son obligatorios (m�nimo 3 caracteres)');
+      setSummaryError('Los temas vistos son obligatorios (minimo 3 caracteres)');
       return;
     }
     
     const duracion = parseInt(summaryData.duracionMinutos);
     if (!duracion || duracion < 1 || duracion > 300) {
-      setSummaryError('La duraci�n debe ser entre 1 y 300 minutos');
+      setSummaryError('La duracion debe ser entre 1 y 300 minutos');
       return;
     }
     
     if (summaryData.rating < 1 || summaryData.rating > 5) {
-      setSummaryError('Debes seleccionar una calificaci�n (1-5 estrellas)');
+      setSummaryError('Debes seleccionar una calificacion (1-5 estrellas)');
       return;
     }
 
@@ -490,7 +490,7 @@ export default function ChatScreen() {
       console.log('[SUMMARY] Guardado en Firestore exitosamente');
       
       // Enviar mensaje al chat
-      const summaryText = `?? Sesi�n completada\n? ${summaryData.rating}/5\n?? ${summaryData.temasVistos}`;
+      const summaryText = `Sesion completada\nRating: ${summaryData.rating}/5\nTemas: ${summaryData.temasVistos}`;
       await addDoc(collection(db, 'conversations', convoId, 'messages'), {
         fromUid: me.uid,
         text: summaryText,
@@ -501,7 +501,7 @@ export default function ChatScreen() {
       
       await setDoc(
         doc(db, 'conversations', convoId),
-        { lastMessageText: 'Sesi�n completada', lastMessageAt: serverTimestamp() },
+        { lastMessageText: 'Sesion completada', lastMessageAt: serverTimestamp() },
         { merge: true }
       );
 
@@ -533,7 +533,7 @@ export default function ChatScreen() {
       }
     }
     if (!when || Number.isNaN(when.getTime())) {
-      setScheduleError('Selecciona fecha y hora v�lidas.');
+      setScheduleError('Selecciona fecha y hora validas.');
       return;
     }
     if (when.getTime() < Date.now()) {
@@ -683,7 +683,7 @@ export default function ChatScreen() {
           <Image source={{ uri: otherUser?.fotoUrl || DEFAULT_AVATAR }} style={styles.bubbleAvatar} />
         )}
         <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
-          <Text style={styles.bubbleText}>{item.text}</Text>
+          <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{item.text}</Text>
           {item.type === 'schedule' && renderScheduleMeta(item)}
         </View>
       </View>
@@ -748,6 +748,11 @@ export default function ChatScreen() {
             keyExtractor={(item) => item.id}
             renderItem={renderMessage}
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => {
+              if (messages.length) {
+                listRef.current?.scrollToEnd({ animated: false });
+              }
+            }}
             contentContainerStyle={[
               styles.listContent,
               {
@@ -778,16 +783,18 @@ export default function ChatScreen() {
         {confirmedMeeting && !bothCompleted ? (
           iCompleted ? (
             <View style={styles.esperandoButton}>
-              <Text style={styles.esperandoText}>Esperando a {otherUser?.nombre || 'usuario'}</Text>
+              <Text
+                style={styles.esperandoText}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                Esperando a {otherUser?.nombre || 'usuario'}
+              </Text>
             </View>
-          ) : canFinalize || meetingStarted ? (
+          ) : (
             <TouchableOpacity style={styles.finalizarButton} onPress={openSummaryModal}>
               <Text style={styles.finalizarText}>Finalizar</Text>
             </TouchableOpacity>
-          ) : (
-            <View style={[styles.agendaButton, { opacity: 0.5 }]}>
-              <Text style={[styles.agendaText, { color: '#4a6278' }]}>Agenda</Text>
-            </View>
           )
         ) : (
           <TouchableOpacity style={styles.agendaButton} onPress={openScheduler}>
@@ -850,7 +857,7 @@ export default function ChatScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.weekdayRow}>
-                {['lu', 'ma', 'mi', 'ju', 'vi', 's�', 'do'].map((w) => (
+                {['lu', 'ma', 'mi', 'ju', 'vi', 'sa', 'do'].map((w) => (
                   <Text key={w} style={styles.weekdayLabel}>
                     {w}
                   </Text>
@@ -956,7 +963,7 @@ export default function ChatScreen() {
         <View style={styles.modalOverlay}>
           <ScrollView contentContainerStyle={styles.summaryScrollContent} showsVerticalScrollIndicator={false}>
             <View style={styles.summaryCard}>
-              <Text style={styles.summaryTitle}>?? Resumen de la Sesi�n</Text>
+              <Text style={styles.summaryTitle}>Resumen de la sesion</Text>
               <Text style={styles.summarySubtitle}>con {otherUser?.nombre || 'Usuario'}</Text>
               
               <Text style={styles.summaryLabel}>Temas vistos *</Text>
@@ -968,7 +975,7 @@ export default function ChatScreen() {
                 placeholderTextColor="#6b7280"
               />
 
-              <Text style={styles.summaryLabel}>Duraci�n (minutos) *</Text>
+              <Text style={styles.summaryLabel}>Duracion (minutos) *</Text>
               <TextInput
                 style={styles.modalInput}
                 value={summaryData.duracionMinutos}
@@ -983,11 +990,11 @@ export default function ChatScreen() {
                 style={styles.modalInput}
                 value={summaryData.logroClave}
                 onChangeText={(v) => setSummaryData({...summaryData, logroClave: v})}
-                placeholder="Ej: Cre� mi primer programa"
+                placeholder="Ej: Cree mi primer programa"
                 placeholderTextColor="#6b7280"
               />
 
-              <Text style={styles.summaryLabel}>Tarea pr�xima</Text>
+              <Text style={styles.summaryLabel}>Tarea proxima</Text>
               <TextInput
                 style={styles.modalInput}
                 value={summaryData.tareaProxima}
@@ -996,11 +1003,13 @@ export default function ChatScreen() {
                 placeholderTextColor="#6b7280"
               />
 
-              <Text style={styles.summaryLabel}>Dificultad de la sesi�n</Text>
+              <Text style={styles.summaryLabel}>Dificultad de la sesion</Text>
               <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <TouchableOpacity key={star} onPress={() => setSummaryData({...summaryData, dificultad: star})}>
-                    <Text style={styles.star}>{summaryData.dificultad >= star ? '?' : '?'}</Text>
+                    <Text style={[styles.star, summaryData.dificultad >= star && styles.starActive]}>
+                      {summaryData.dificultad >= star ? '★' : '☆'}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1009,7 +1018,9 @@ export default function ChatScreen() {
               <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <TouchableOpacity key={star} onPress={() => setSummaryData({...summaryData, rating: star})}>
-                    <Text style={styles.star}>{summaryData.rating >= star ? '?' : '?'}</Text>
+                    <Text style={[styles.star, summaryData.rating >= star && styles.starActive]}>
+                      {summaryData.rating >= star ? '★' : '☆'}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -1019,7 +1030,7 @@ export default function ChatScreen() {
                 style={[styles.modalInput, styles.textArea]}
                 value={summaryData.comentario}
                 onChangeText={(v) => setSummaryData({...summaryData, comentario: v})}
-                placeholder="Escribe tu opini�n..."
+                placeholder="Escribe tu opinion..."
                 placeholderTextColor="#6b7280"
                 multiline
                 numberOfLines={3}
@@ -1036,7 +1047,7 @@ export default function ChatScreen() {
                   onPress={saveSummary}
                   disabled={savingSummary}
                 >
-                  <Text style={styles.modalConfirmText}>{savingSummary ? 'Guardando...' : '?? Guardar'}</Text>
+                  <Text style={styles.modalConfirmText}>{savingSummary ? 'Guardando...' : 'Guardar'}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1147,6 +1158,9 @@ const styles = StyleSheet.create({
   bubbleText: {
     color: '#f8fbff',
   },
+  bubbleTextMine: {
+    color: '#052016',
+  },
   scheduleButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -1210,14 +1224,17 @@ const styles = StyleSheet.create({
   },
   esperandoButton: {
     borderRadius: 999,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     backgroundColor: '#ffa726',
+    maxWidth: 160,
+    flexShrink: 1,
   },
   esperandoText: {
     color: '#3e2723',
     fontWeight: '700',
     fontSize: 12,
+    maxWidth: 140,
   },
   input: {
     flex: 1,
@@ -1282,7 +1299,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 16,
   },
   modalCard: {
     width: '100%',
@@ -1501,16 +1519,17 @@ const styles = StyleSheet.create({
   summaryScrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
   },
   summaryCard: {
     borderRadius: 24,
     backgroundColor: '#0c1530',
     padding: 20,
     gap: 12,
-    maxWidth: 500,
+    maxWidth: 520,
+    width: '92%',
     alignSelf: 'center',
-    width: '100%',
   },
   summaryTitle: {
     color: '#f8fbff',
@@ -1535,6 +1554,10 @@ const styles = StyleSheet.create({
   },
   star: {
     fontSize: 28,
+    color: '#8fa1c4',
+  },
+  starActive: {
+    color: '#ffd44f',
   },
   textArea: {
     height: 80,

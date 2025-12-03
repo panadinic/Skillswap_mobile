@@ -296,6 +296,9 @@ export default function ProfileScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.postTitle}>{item.title || 'Sin titulo'}</Text>
             {description ? <Text style={styles.postDescription}>{description}</Text> : null}
+            {item.imageUrl ? (
+              <Image source={{ uri: item.imageUrl }} style={styles.postImage} resizeMode="cover" />
+            ) : null}
           </View>
           <View style={styles.ratingBadge}>
             <Ionicons name="star" size={16} color="#ffd44f" />
@@ -1496,6 +1499,13 @@ const styles = StyleSheet.create({
   postDescription: {
     color: '#bbc7ec',
     marginTop: 4,
+  },
+  postImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 12,
+    marginTop: 10,
+    backgroundColor: '#0f1f3d',
   },
   ratingBadge: {
     flexDirection: 'row',
